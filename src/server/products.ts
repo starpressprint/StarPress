@@ -102,6 +102,10 @@ export async function listAdminProducts(options: ListAdminProductsOptions = {}) 
 
   let dbProducts: any[] = [];
   let dbTotal = 0;
+  let globalCount = 0;
+  let publishedCount = 0;
+  let draftCount = 0;
+  let lowStockCount = 0;
 
   try {
     const where: any = {};
@@ -134,7 +138,7 @@ export async function listAdminProducts(options: ListAdminProductsOptions = {}) 
 
     const skip = (page - 1) * limit;
 
-    const [products, total] = await Promise.all([
+    const [products, total, gc, pc, dc, lsc] = await Promise.all([
       db.product.findMany({
         where,
         include: {
@@ -148,16 +152,24 @@ export async function listAdminProducts(options: ListAdminProductsOptions = {}) 
         take: limit,
       }),
       db.product.count({ where }),
+      db.product.count(),
+      db.product.count({ where: { status: "published" } }),
+      db.product.count({ where: { status: "draft" } }),
+      db.product.count({ where: { stockQuantity: { lte: 10 } } }),
     ]);
 
     dbProducts = products;
     dbTotal = total;
+    globalCount = gc;
+    publishedCount = pc;
+    draftCount = dc;
+    lowStockCount = lsc;
   } catch (err) {
     console.warn("[Admin Products] Database query fallback:", err);
   }
 
   // If database has records, format and return them
-  if (dbProducts.length > 0 || dbTotal > 0) {
+  if (globalCount > 0) {
     const formatted: AdminProductDto[] = dbProducts.map((p) => {
       const basePrice = Number(p.basePrice);
       const costPerUnit = p.costPerUnit ? Number(p.costPerUnit) : null;
@@ -203,10 +215,10 @@ export async function listAdminProducts(options: ListAdminProductsOptions = {}) 
       page,
       limit,
       stats: {
-        total: dbTotal,
-        published: dbProducts.filter((p) => p.status === "published").length,
-        draft: dbProducts.filter((p) => p.status === "draft").length,
-        lowStock: dbProducts.filter((p) => (p.stockQuantity ?? 0) <= 10).length,
+        total: globalCount,
+        published: publishedCount,
+        draft: draftCount,
+        lowStock: lowStockCount,
       },
     };
   }

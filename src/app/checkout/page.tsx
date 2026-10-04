@@ -24,6 +24,7 @@ import Footer from "@/components/layout/Footer";
 import Button from "@/components/ui/Button";
 import { useCart } from "@/context/CartContext";
 import { useAuthSession } from "@/hooks/useAuthSession";
+import { supabase } from "@/lib/supabase/client";
 
 const INDIAN_STATES = [
   "Andhra Pradesh",
@@ -127,6 +128,10 @@ export default function CheckoutPage() {
     }
   }, []);
 
+  const [savedAddresses, setSavedAddresses] = useState<any[]>([]);
+  const [isAddingNewAddress, setIsAddingNewAddress] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+
   // Autofill checkout details when user is authenticated
   useEffect(() => {
     if (session?.user) {
@@ -136,6 +141,38 @@ export default function CheckoutPage() {
         email: prev.email || session.user.email || "",
         phone: prev.phone || session.user.phone || "",
       }));
+
+      // Fetch saved addresses
+      supabase.auth.getSession().then(({ data: sessionData }: any) => {
+        const token = sessionData?.session?.access_token;
+        fetch("/api/account/addresses", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.addresses && data.addresses.length > 0) {
+              setSavedAddresses(data.addresses);
+              const defaultAddr = data.addresses.find((a: any) => a.isDefault) || data.addresses[0];
+              setSelectedAddressId(defaultAddr.id);
+              setIsAddingNewAddress(false);
+              setFormData((prev) => ({
+                ...prev,
+                addressLine1: defaultAddr.line1,
+                addressLine2: defaultAddr.line2 || "",
+                city: defaultAddr.city,
+                state: defaultAddr.state,
+                pinCode: defaultAddr.pincode,
+              }));
+            } else {
+              setIsAddingNewAddress(true);
+            }
+          })
+          .catch(() => {
+            setIsAddingNewAddress(true);
+          });
+      });
+    } else {
+      setIsAddingNewAddress(true);
     }
   }, [session]);
 
@@ -768,14 +805,14 @@ export default function CheckoutPage() {
                       htmlFor="phone"
                       className="block text-xs font-semibold text-text-secondary uppercase"
                     >
-                      Phone Number (WhatsApp) *
+                      Phone Number (WhatsApp) {!session?.user?.phone && "*"}
                     </label>
                     <input
                       id="phone"
                       name="phone"
                       type="tel"
                       inputMode="tel"
-                      required
+                      required={!session?.user?.phone}
                       autoComplete="tel"
                       placeholder="+91 98765 43210"
                       value={formData.phone}
@@ -802,25 +839,104 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1 sm:col-span-2">
-                    <label
-                      htmlFor="addressLine1"
-                      className="block text-xs font-semibold text-text-secondary uppercase"
-                    >
-                      Flat / Building / Office / Premise *
+                {savedAddresses.length > 0 && (
+                  <div className="space-y-3 mb-6">
+                    <label className="block text-xs font-semibold text-text-secondary uppercase">
+                      Select Delivery Address
                     </label>
-                    <input
-                      id="addressLine1"
-                      name="addressLine1"
-                      type="text"
-                      required
-                      autoComplete="address-line1"
-                      placeholder="e.g. Unit 402, Apex Business Park"
-                      value={formData.addressLine1}
-                      onChange={handleInputChange}
-                      className="w-full rounded-xl bg-bg-surface-alt border border-border-subtle px-4 py-3 text-sm text-white placeholder-text-muted focus:outline-none focus:border-brand-yellow"
-                    />
+                    <div className="space-y-3">
+                      {savedAddresses.map((addr: any) => (
+                        <div
+                          key={addr.id}
+                          onClick={() => {
+                            setSelectedAddressId(addr.id);
+                            setIsAddingNewAddress(false);
+                            setFormData((prev) => ({
+                              ...prev,
+                              addressLine1: addr.line1,
+                              addressLine2: addr.line2 || "",
+                              city: addr.city,
+                              state: addr.state,
+                              pinCode: addr.pincode,
+                            }));
+                          }}
+                          className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                            selectedAddressId === addr.id && !isAddingNewAddress
+                              ? "border-brand-yellow bg-brand-yellow/5"
+                              : "border-border-subtle bg-bg-surface-alt hover:border-white/30"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 mb-1">
+                            <div className="w-4 h-4 rounded-full border border-brand-yellow flex items-center justify-center shrink-0">
+                              {selectedAddressId === addr.id && !isAddingNewAddress && (
+                                <div className="w-2 h-2 rounded-full bg-brand-yellow" />
+                              )}
+                            </div>
+                            <span className="font-bold text-sm text-white">
+                              {addr.label || "Saved Address"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-text-secondary pl-7">
+                            {addr.line1}, {addr.line2 ? `${addr.line2}, ` : ""}
+                            {addr.city}, {addr.state} - {addr.pincode}
+                          </p>
+                        </div>
+                      ))}
+                      
+                      <div
+                        onClick={() => {
+                          setSelectedAddressId(null);
+                          setIsAddingNewAddress(true);
+                          setFormData((prev) => ({
+                            ...prev,
+                            addressLine1: "",
+                            addressLine2: "",
+                            city: "",
+                            state: "Delhi NCR",
+                            pinCode: "",
+                          }));
+                        }}
+                        className={`cursor-pointer rounded-xl border p-4 transition-colors ${
+                          isAddingNewAddress
+                            ? "border-brand-yellow bg-brand-yellow/5"
+                            : "border-border-subtle bg-bg-surface-alt hover:border-white/30"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-4 h-4 rounded-full border border-brand-yellow flex items-center justify-center shrink-0">
+                            {isAddingNewAddress && (
+                              <div className="w-2 h-2 rounded-full bg-brand-yellow" />
+                            )}
+                          </div>
+                          <span className="font-bold text-sm text-white">
+                            + Add New Address
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(!savedAddresses.length || isAddingNewAddress) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label
+                        htmlFor="addressLine1"
+                        className="block text-xs font-semibold text-text-secondary uppercase"
+                      >
+                        Flat / Building / Office / Premise *
+                      </label>
+                      <input
+                        id="addressLine1"
+                        name="addressLine1"
+                        type="text"
+                        required
+                        autoComplete="address-line1"
+                        placeholder="e.g. Unit 402, Apex Business Park"
+                        value={formData.addressLine1}
+                        onChange={handleInputChange}
+                        className="w-full rounded-xl bg-bg-surface-alt border border-border-subtle px-4 py-3 text-sm text-white placeholder-text-muted focus:outline-none focus:border-brand-yellow"
+                      />
                   </div>
 
                   <div className="space-y-1 sm:col-span-2">
@@ -926,6 +1042,7 @@ export default function CheckoutPage() {
                     />
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Step 3: GST Tax Invoicing (Optional) */}

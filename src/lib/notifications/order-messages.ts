@@ -195,7 +195,9 @@ export function generateOrderEmailHtml(
       <body>
         <div class="container">
           <div class="header">
-            <a href="${STORE_URL}" class="logo">STAR<span>PRESS</span></a>
+            <a href="${STORE_URL}" class="logo">
+              <img src="${STORE_URL}/images/Logo.png" alt="Star Press" height="40" style="display: block; margin: 0 auto; height: 40px; width: auto;" />
+            </a>
             <p style="margin: 4px 0 0 0; font-size: 12px; color: #94a3b8;">Commercial & Business Printing</p>
           </div>
           <div class="content">

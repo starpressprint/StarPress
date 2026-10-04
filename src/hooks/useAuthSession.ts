@@ -185,7 +185,7 @@ export function useAuthSession(): AuthState {
     user?.email?.toLowerCase() === 'starpress.print@gmail.com' ||
     user?.email?.toLowerCase() === 'mrdigitalmarketerpro@gmail.com' ||
     Boolean(user?.email?.toLowerCase().endsWith('@starpress.in'));
-  const session = user ? { user } : null;
+  const session = useMemo(() => (user ? { user } : null), [user]);
 
   return {
     user,

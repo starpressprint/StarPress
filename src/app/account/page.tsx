@@ -116,23 +116,32 @@ function AccountContent() {
 
   useEffect(() => {
     if (session?.user) {
-      setProfileForm((prev) => ({
-        ...prev,
-        name: session.user.name || "",
-        phone: session.user.phone || "",
-      }));
+      setProfileForm((prev) => {
+        const newName = session.user.name || "";
+        const newPhone = session.user.phone || "";
+        if (prev.name === newName && prev.phone === newPhone) return prev;
+        return {
+          ...prev,
+          name: newName,
+          phone: newPhone,
+        };
+      });
 
       // Fetch user's orders with fallback
-      fetch("/api/account/orders")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.orders && data.orders.length > 0) {
-            setOrders(data.orders);
-          } else {
-            try {
-              const local = JSON.parse(localStorage.getItem("starpress_recent_orders") || "[]");
-              if (Array.isArray(local) && local.length > 0) {
-                const mapped = local.map((lo: any) => ({
+      supabase.auth.getSession().then(({ data: sessionData }: any) => {
+        const token = sessionData?.session?.access_token;
+        fetch("/api/account/orders", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.orders && data.orders.length > 0) {
+              setOrders(data.orders);
+            } else {
+              try {
+                const local = JSON.parse(localStorage.getItem("starpress_recent_orders") || "[]");
+                if (Array.isArray(local) && local.length > 0) {
+                  const mapped = local.map((lo: any) => ({
                   id: lo.orderId,
                   orderNumber: lo.orderId,
                   status: "CONFIRMED",
@@ -165,29 +174,41 @@ function AccountContent() {
           } catch {}
           setIsLoadingOrders(false);
         });
+      });
 
       // Fetch user's addresses
-      fetch("/api/account/addresses")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.addresses) {
-            setAddresses(data.addresses);
-          }
+      supabase.auth.getSession().then(({ data: sessionData }: any) => {
+        const token = sessionData?.session?.access_token;
+        fetch("/api/account/addresses", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
-        .catch(() => {});
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.addresses) {
+              setAddresses(data.addresses);
+            }
+          })
+          .catch(() => {});
+      });
     }
   }, [session]);
 
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      
       const res = await fetch("/api/account/addresses", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify(addressForm),
       });
       const data = await res.json();
-      if (data.success && data.address) {
+      if (res.ok && data.success && data.address) {
         setAddresses((prev) => [data.address, ...prev]);
         setIsAddingAddress(false);
         setAddressForm({
@@ -200,9 +221,12 @@ function AccountContent() {
           phone: "",
           isDefault: false,
         });
+      } else {
+        alert(data.error || "Failed to save address. Please try again.");
       }
     } catch (err) {
       console.error("Failed to save address:", err);
+      alert("Network error: Failed to save address.");
     }
   };
 
@@ -228,9 +252,15 @@ function AccountContent() {
         }
       }
 
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
       const res = await fetch("/api/account/profile", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
           name: profileForm.name,
           phone: profileForm.phone,

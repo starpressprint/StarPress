@@ -266,58 +266,74 @@ export async function trackOrder(orderNumber: string, phoneOrEmail: string) {
 }
 
 export async function getOrderStats() {
-  let allOrders: { id?: string; orderNumber?: string; status: string; paymentStatus?: string }[] = [];
-
   try {
-    const dbOrders = await db.order.findMany({
-      select: {
-        id: true,
-        orderNumber: true,
-        status: true,
-        paymentStatus: true,
-      },
-    });
-    if (Array.isArray(dbOrders)) {
-      allOrders = dbOrders.map((o) => ({
-        id: o.id,
-        orderNumber: o.orderNumber,
-        status: String(o.status || "").toUpperCase(),
-        paymentStatus: String(o.paymentStatus || "").toUpperCase(),
-      }));
+    const [statusCounts, paymentCounts, total] = await Promise.all([
+      db.order.groupBy({
+        by: ['status'],
+        _count: {
+          status: true,
+        },
+      }),
+      db.order.groupBy({
+        by: ['paymentStatus'],
+        _count: {
+          paymentStatus: true,
+        },
+      }),
+      db.order.count(),
+    ]);
+
+    const stats = {
+      total,
+      pending: 0,
+      processing: 0,
+      shipped: 0,
+      delivered: 0,
+      cancelled: 0,
+      refunded: 0,
+      unpaid: 0,
+      paid: 0,
+    };
+
+    const norm = (s?: string) => {
+      const v = (s || "").toUpperCase().trim();
+      if (v === "DISPATCHED") return "SHIPPED";
+      if (v === "CONFIRMED" || v === "IN_PRODUCTION") return "PROCESSING";
+      return v;
+    };
+
+    for (const group of statusCounts) {
+      const normalizedStatus = norm(group.status);
+      const count = group._count.status;
+      if (normalizedStatus === "PENDING") stats.pending += count;
+      else if (normalizedStatus === "PROCESSING") stats.processing += count;
+      else if (normalizedStatus === "SHIPPED") stats.shipped += count;
+      else if (normalizedStatus === "DELIVERED") stats.delivered += count;
+      else if (normalizedStatus === "CANCELLED") stats.cancelled += count;
+      else if (normalizedStatus === "REFUNDED") stats.refunded += count;
     }
+
+    for (const group of paymentCounts) {
+      const ps = (group.paymentStatus || "").toUpperCase().trim();
+      if (ps === "UNPAID") stats.unpaid += group._count.paymentStatus;
+      else if (ps === "PAID") stats.paid += group._count.paymentStatus;
+    }
+
+    return stats;
   } catch (error) {
     console.warn("getOrderStats database error:", error);
+    return {
+      total: 0,
+      pending: 0,
+      processing: 0,
+      shipped: 0,
+      delivered: 0,
+      cancelled: 0,
+      refunded: 0,
+      unpaid: 0,
+      paid: 0,
+    };
   }
-
-  const norm = (s?: string) => {
-    const v = (s || "").toUpperCase().trim();
-    if (v === "DISPATCHED") return "SHIPPED";
-    if (v === "CONFIRMED" || v === "IN_PRODUCTION") return "PROCESSING";
-    return v;
-  };
-
-  const total = allOrders.length;
-  const pending = allOrders.filter((o) => norm(o.status) === "PENDING").length;
-  const processing = allOrders.filter((o) => norm(o.status) === "PROCESSING").length;
-  const shipped = allOrders.filter((o) => norm(o.status) === "SHIPPED").length;
-  const delivered = allOrders.filter((o) => norm(o.status) === "DELIVERED").length;
-  const cancelled = allOrders.filter((o) => norm(o.status) === "CANCELLED").length;
-  const refunded = allOrders.filter((o) => norm(o.status) === "REFUNDED").length;
-
-  const unpaid = allOrders.filter((o) => o.paymentStatus === "UNPAID").length;
-  const paid = allOrders.filter((o) => o.paymentStatus === "PAID").length;
-
-  return {
-    total,
-    pending,
-    processing,
-    shipped,
-    delivered,
-    cancelled,
-    refunded,
-    unpaid,
-    paid,
-  };
 }
 
 export async function listOrders(options?: {
