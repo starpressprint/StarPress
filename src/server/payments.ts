@@ -5,6 +5,7 @@ import {
   sendPaymentReceivedEmail,
   sendPaymentFailedEmail,
   notifyOwnerOrderPaid,
+  sendLatePaymentRefundEmail,
 } from "@/server/email";
 import { auditPaymentEvent } from "@/server/payment-audit";
 
@@ -274,24 +275,27 @@ export function verifyWebhookSignature(rawPayload: string, signature: string): b
  * Upserts / checks unique gatewayPaymentId to prevent duplicate webhook processing.
  * Also increments discount coupon usedCount atomically upon payment capture.
  */
-export async function recordPaymentSuccess(params: {
-  orderId: string;
-  paymentId: string;
-  razorpayOrderId?: string;
-  signature?: string;
-  method?: string;
-  amount: number; // in rupees
-  rawPayload?: any;
-}) {
+export async function recordPaymentSuccess(
+  params: {
+    orderId: string;
+    paymentId: string;
+    razorpayOrderId?: string;
+    signature?: string;
+    method?: string;
+    amount: number; // in rupees
+    rawPayload?: any;
+  },
+  client: typeof db = db
+) {
   try {
     // 1. Idempotency Check: if this payment transaction already exists, skip duplicate write
-    const existingTx = await db.paymentTransaction.findFirst({
+    const existingTx = await client.paymentTransaction.findFirst({
       where: { gatewayPaymentId: params.paymentId },
     });
 
     if (existingTx) {
       console.log(`[Payment Idempotency] Gateway transaction ${params.paymentId} already recorded. Skipping duplicate.`);
-      const existingOrder = await db.order.findUnique({
+      const existingOrder = await client.order.findUnique({
         where: { id: params.orderId },
         include: { items: true },
       });
@@ -299,12 +303,13 @@ export async function recordPaymentSuccess(params: {
     }
 
     // 2. Atomic database update: mark order PAID and create PaymentTransaction
-    const updatedOrder = await db.$transaction(async (tx) => {
+    const updatedOrder = await client.$transaction(async (tx) => {
       // Serialize capture against expiry/restock for this order.
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${params.orderId} FOR UPDATE`;
-      // Find current order
+      // Find current order with items
       const targetOrder = await tx.order.findUnique({
         where: { id: params.orderId },
+        include: { items: true },
       });
 
       if (!targetOrder) {
@@ -325,39 +330,156 @@ export async function recordPaymentSuccess(params: {
       const isAlreadyPaid = targetOrder.paymentStatus === "PAID";
       const isDifferentPayment = Boolean(targetOrder.paymentId && targetOrder.paymentId !== params.paymentId);
 
-      // A capture that arrives after the expiry worker released inventory must
-      // enter the duplicate-payment refund queue instead of reconfirming stockless order.
+      // Late payment arrived after expiry or cancellation:
       if (targetOrder.paymentStatus === "EXPIRED" || targetOrder.status === "CANCELLED") {
-        await tx.paymentTransaction.create({
-          data: {
-            orderId: targetOrder.id,
-            gateway: "RAZORPAY",
-            gatewayOrderId: params.razorpayOrderId || targetOrder.razorpayOrderId || null,
-            gatewayPaymentId: params.paymentId,
-            gatewaySignature: params.signature || null,
-            method: params.method || "ONLINE",
-            amount: params.amount,
-            currency: "INR",
-            status: "REFUND_FLAGGED",
-            bank,
-            wallet,
-            vpa,
-            cardLast4,
-            cardNetwork,
-            international,
-            rawPayload: {
-              ...(params.rawPayload ? (params.rawPayload as any) : {}),
-              refundReason: "LATE_PAYMENT_AFTER_ORDER_EXPIRY",
+        if (targetOrder.stockRestoredAt !== null) {
+          // The order was previously restocked. Attempt atomic re-decrement.
+          const productIds = Array.from(
+            new Set(targetOrder.items.map((it) => it.productId).filter(Boolean) as string[])
+          ).sort();
+
+          if (productIds.length > 0) {
+            await tx.$queryRaw`SELECT id FROM "Product" WHERE id = ANY(${productIds}) FOR UPDATE`;
+          }
+
+          let sufficientStock = true;
+          for (const item of targetOrder.items) {
+            if (!item.productId) continue;
+            const prod = await tx.product.findUnique({
+              where: { id: item.productId },
+              select: { trackInventory: true, stockQuantity: true },
+            });
+            if (prod?.trackInventory && prod.stockQuantity < item.quantity) {
+              sufficientStock = false;
+              break;
+            }
+          }
+
+          if (sufficientStock) {
+            // Re-decrement stock atomically for all tracked products
+            for (const item of targetOrder.items) {
+              if (!item.productId) continue;
+              await tx.product.updateMany({
+                where: {
+                  id: item.productId,
+                  trackInventory: true,
+                  stockQuantity: { gte: item.quantity },
+                },
+                data: {
+                  stockQuantity: { decrement: item.quantity },
+                },
+              });
+            }
+
+            // Record successful payment transaction
+            await tx.paymentTransaction.create({
+              data: {
+                orderId: targetOrder.id,
+                gateway: "RAZORPAY",
+                gatewayOrderId: params.razorpayOrderId || targetOrder.razorpayOrderId || null,
+                gatewayPaymentId: params.paymentId,
+                gatewaySignature: params.signature || null,
+                method: params.method || "ONLINE",
+                amount: params.amount,
+                currency: "INR",
+                status: "CAPTURED",
+                bank,
+                wallet,
+                vpa,
+                cardLast4,
+                cardNetwork,
+                international,
+                rawPayload: params.rawPayload ? (params.rawPayload as any) : null,
+              },
+            });
+
+            // Reinstate order as PAID, confirm it, and clear stockRestoredAt
+            const reinstatedOrder = await tx.order.update({
+              where: { id: targetOrder.id },
+              data: {
+                paymentId: params.paymentId,
+                paymentStatus: "PAID",
+                status: "CONFIRMED",
+                stockRestoredAt: null,
+                notes: `${targetOrder.notes || ""} [LATE_PAYMENT_REINSTATED: Stock re-allocated and order reinstated as paid for payment ${params.paymentId}]`,
+              },
+              include: { items: true },
+            });
+
+            return { ...reinstatedOrder, reinstatedAfterExpiry: true };
+          } else {
+            // Stock insufficient: mark transaction REFUND_FLAGGED for automated refund sweep
+            await tx.paymentTransaction.create({
+              data: {
+                orderId: targetOrder.id,
+                gateway: "RAZORPAY",
+                gatewayOrderId: params.razorpayOrderId || targetOrder.razorpayOrderId || null,
+                gatewayPaymentId: params.paymentId,
+                gatewaySignature: params.signature || null,
+                method: params.method || "ONLINE",
+                amount: params.amount,
+                currency: "INR",
+                status: "REFUND_FLAGGED",
+                bank,
+                wallet,
+                vpa,
+                cardLast4,
+                cardNetwork,
+                international,
+                rawPayload: {
+                  ...(params.rawPayload ? (params.rawPayload as any) : {}),
+                  refundReason: "LATE_PAYMENT_OUT_OF_STOCK",
+                },
+              },
+            });
+
+            const flaggedOrder = await tx.order.update({
+              where: { id: targetOrder.id },
+              data: {
+                notes: `${targetOrder.notes || ""} [LATE_PAYMENT_FLAGGED: Payment ${params.paymentId} arrived after order expiry but stock unavailable; auto-refund queued.]`,
+              },
+              include: { items: true },
+            });
+
+            return { ...flaggedOrder, latePaymentOutOfStock: true };
+          }
+        } else {
+          // Stock was never restocked (inventory was held). Reinstate order directly.
+          await tx.paymentTransaction.create({
+            data: {
+              orderId: targetOrder.id,
+              gateway: "RAZORPAY",
+              gatewayOrderId: params.razorpayOrderId || targetOrder.razorpayOrderId || null,
+              gatewayPaymentId: params.paymentId,
+              gatewaySignature: params.signature || null,
+              method: params.method || "ONLINE",
+              amount: params.amount,
+              currency: "INR",
+              status: "CAPTURED",
+              bank,
+              wallet,
+              vpa,
+              cardLast4,
+              cardNetwork,
+              international,
+              rawPayload: params.rawPayload ? (params.rawPayload as any) : null,
             },
-          },
-        });
-        await tx.order.update({
-          where: { id: targetOrder.id },
-          data: {
-            notes: `${targetOrder.notes || ""} [LATE_PAYMENT_FLAGGED: Payment ${params.paymentId} arrived after order expiry; refund required.]`,
-          },
-        });
-        return { ...targetOrder, items: [], latePaymentFlagged: true };
+          });
+
+          const reinstatedOrder = await tx.order.update({
+            where: { id: targetOrder.id },
+            data: {
+              paymentId: params.paymentId,
+              paymentStatus: "PAID",
+              status: "CONFIRMED",
+              stockRestoredAt: null,
+              notes: `${targetOrder.notes || ""} [LATE_PAYMENT_REINSTATED: Order reinstated as paid for payment ${params.paymentId}]`,
+            },
+            include: { items: true },
+          });
+
+          return { ...reinstatedOrder, reinstatedAfterExpiry: true };
+        }
       }
 
       if (isAlreadyPaid && isDifferentPayment) {
@@ -476,13 +598,33 @@ export async function recordPaymentSuccess(params: {
       return saved;
     });
 
-    if ((updatedOrder as any).latePaymentFlagged) {
+    if ((updatedOrder as any).latePaymentOutOfStock || (updatedOrder as any).latePaymentFlagged) {
       await auditPaymentEvent({
         orderId: params.orderId,
         action: "LATE_PAYMENT_REFUND_FLAGGED",
         actor: "WEBHOOK",
-        details: { paymentId: params.paymentId, amount: params.amount },
+        details: {
+          paymentId: params.paymentId,
+          amount: params.amount,
+          reason: (updatedOrder as any).latePaymentOutOfStock ? "OUT_OF_STOCK" : "EXPIRED",
+        },
       });
+
+      const customerEmail =
+        updatedOrder.guestEmail || (updatedOrder as any).user?.email || (updatedOrder.shippingAddress as any)?.email;
+      const customerName =
+        updatedOrder.guestName || (updatedOrder as any).user?.name || (updatedOrder.shippingAddress as any)?.fullName || "Valued Customer";
+
+      if (customerEmail) {
+        sendLatePaymentRefundEmail({
+          orderNumber: updatedOrder.orderNumber,
+          customerName,
+          customerEmail,
+          amount: params.amount,
+          paymentId: params.paymentId,
+        }).catch((e) => console.warn("Failed to dispatch late payment refund email:", e));
+      }
+
       return { success: true, order: updatedOrder, requiresRefund: true };
     }
 

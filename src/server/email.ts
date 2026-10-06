@@ -429,3 +429,41 @@ export async function alertOwnerReconciliationDrift(params: {
     html: wrapHtmlEmail("Payment Reconciliation Report", body),
   });
 }
+
+/**
+ * 9. Customer Notification: Late Payment Arrived After Expiry (Out of Stock, Refund Queued)
+ */
+export async function sendLatePaymentRefundEmail(params: {
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  amount: number;
+  paymentId: string;
+}): Promise<boolean> {
+  const formattedTotal = Number(params.amount).toLocaleString("en-IN");
+  const body = `
+    <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3);">
+      Payment Received — Order Expired
+    </span>
+    <h1 class="h1">Payment Received After Order Window Expired</h1>
+    <p class="p">Hi ${params.customerName},</p>
+    <p class="p">We received your payment of <strong>₹${formattedTotal}</strong> for order <strong>#${params.orderNumber}</strong>. However, the order payment reservation window had already closed and the inventory is no longer available.</p>
+    
+    <div class="box">
+      <div class="row"><span class="lbl">Order Number:</span><span class="val font-mono">${params.orderNumber}</span></div>
+      <div class="row"><span class="lbl">Payment ID:</span><span class="val font-mono">${params.paymentId}</span></div>
+      <div class="row"><span class="lbl">Amount to Refund:</span><span class="val font-mono" style="color: #10B981;">₹${formattedTotal}</span></div>
+      <div class="row"><span class="lbl">Refund Status:</span><span class="val" style="color: #F59E0B;">Automated Refund Queued</span></div>
+    </div>
+
+    <p class="p">A full automatic refund has been scheduled to your original payment method. Depending on your bank or payment provider, it will reflect within 5-7 business days.</p>
+    <p class="p">If you would still like to place this print order, please visit <a href="${APP_URL}" style="color: #FFCF1B;">Star Press</a> to create a new order.</p>
+  `;
+
+  return sendViaResend({
+    to: params.customerEmail,
+    subject: `Refund Notice: Payment for Expired Order #${params.orderNumber} [Star Press]`,
+    html: wrapHtmlEmail(`Refund Scheduled #${params.orderNumber}`, body),
+  });
+}
+

@@ -78,10 +78,13 @@ export const GST_RATE = 0.18;
 /**
  * Resolves a product configuration from DB (if published) or catalog fallbacks.
  */
-export async function resolveProductConfig(identifier: {
-  productId?: string;
-  slug?: string;
-}): Promise<{
+export async function resolveProductConfig(
+  identifier: {
+    productId?: string;
+    slug?: string;
+  },
+  client: typeof db = db
+): Promise<{
   productName: string;
   productSlug: string;
   productId: string | null;
@@ -95,7 +98,7 @@ export async function resolveProductConfig(identifier: {
   let dbProduct: any = null;
   try {
     if (productId || lookupSlug) {
-      dbProduct = await db.product.findFirst({
+      dbProduct = await client.product.findFirst({
         where: {
           OR: [
             ...(productId ? [{ id: productId }] : []),
@@ -171,7 +174,7 @@ export async function resolveProductConfig(identifier: {
   return {
     productName: dbProduct?.name || catalogItem.name,
     productSlug: catalogItem.slug,
-    productId: dbProduct?.id || catalogItem.id || null,
+    productId: dbProduct?.id || identifier.productId || catalogItem.id || null,
     config: catalogItem,
     requiresArtwork,
   };
@@ -279,7 +282,10 @@ export async function validateCouponForQuote(
  * Authoritative server-side price calculator for orders.
  * Single source of truth for checkout preview and order creation.
  */
-export async function quoteOrder(input: QuoteOrderInput): Promise<QuoteOrderResult> {
+export async function quoteOrder(
+  input: QuoteOrderInput,
+  client: typeof db = db
+): Promise<QuoteOrderResult> {
   if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
     const err = new Error("At least one line item is required for a quote.");
     (err as any).statusCode = 400;
@@ -298,10 +304,13 @@ export async function quoteOrder(input: QuoteOrderInput): Promise<QuoteOrderResu
     }
 
     const { productName, productSlug, productId, config, requiresArtwork } =
-      await resolveProductConfig({
-        productId: item.productId,
-        slug: item.slug || item.productSlug,
-      });
+      await resolveProductConfig(
+        {
+          productId: item.productId,
+          slug: item.slug || item.productSlug,
+        },
+        client
+      );
 
     const priceBreakdown: PriceBreakdown = calculateProductPrice(config, {
       sizeId: item.sizeId,

@@ -2,15 +2,15 @@
   "crons": [
     {
       "path": "/api/cron/expire-orders",
-      "schedule": "0 * * * *"
+      "schedule": "0 1 * * *"
     },
     {
       "path": "/api/cron/reconcile-payments",
-      "schedule": "30 */6 * * *"
+      "schedule": "0 2 * * *"
     },
     {
       "path": "/api/cron/auto-refund-flagged",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

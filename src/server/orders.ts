@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { Prisma, OrderStatus } from "@prisma/client";
+import { env } from "@/lib/env";
 import { quoteOrder, QuoteItemInput } from "@/server/quote";
 import { sendOrderPlacedProofEmail } from "@/server/email";
 
@@ -52,7 +53,7 @@ function generateOrderNumber(): string {
   return `SP-${year}-${timestamp}${random}`;
 }
 
-export async function createOrder(input: CreateOrderInput) {
+export async function createOrder(input: CreateOrderInput, client: typeof db = db) {
   // 1. Validate payment method
   let normalizedPaymentMethod = (input.paymentMethod || "ONLINE").toUpperCase().trim();
   if (
@@ -77,7 +78,7 @@ export async function createOrder(input: CreateOrderInput) {
   const idempKey = input.idempotencyKey?.trim();
   if (idempKey) {
     try {
-      const existingOrder = await db.order.findFirst({
+      const existingOrder = await client.order.findFirst({
         where: {
           paymentStatus: "UNPAID",
           createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
@@ -116,17 +117,20 @@ export async function createOrder(input: CreateOrderInput) {
     previewUrl: it.previewUrl,
   }));
 
-  const quote = await quoteOrder({
-    items: quoteItems,
-    couponCode: input.couponCode,
-    shippingMethod: input.shippingMethod,
-  });
+  const quote = await quoteOrder(
+    {
+      items: quoteItems,
+      couponCode: input.couponCode,
+      shippingMethod: input.shippingMethod,
+    },
+    client
+  );
 
   // 5. Pre-order stock validation — reject if any tracked product has insufficient stock
   for (const snap of quote.lineSnapshots) {
     if (snap.productId) {
       try {
-        const dbProd = await db.product.findUnique({
+        const dbProd = await client.product.findUnique({
           where: { id: snap.productId },
           select: { trackInventory: true, stockQuantity: true, name: true },
         });
@@ -189,7 +193,7 @@ export async function createOrder(input: CreateOrderInput) {
   while (retries < MAX_RETRIES) {
     try {
       const currentOrderNumber = retries === 0 ? orderNumber : generateOrderNumber();
-      order = await db.$transaction(async (tx) => {
+      order = await client.$transaction(async (tx) => {
         const created = await tx.order.create({
           data: {
             orderNumber: currentOrderNumber,
@@ -209,7 +213,19 @@ export async function createOrder(input: CreateOrderInput) {
           : Prisma.JsonNull,
         paymentMethod: normalizedPaymentMethod,
         paymentStatus: "UNPAID",
-        paymentExpiresAt: normalizedPaymentMethod === "ONLINE" ? new Date(Date.now() + 24 * 60 * 60 * 1000) : null,
+        paymentExpiresAt:
+          normalizedPaymentMethod === "ONLINE"
+            ? new Date(
+                Date.now() +
+                  Number(
+                    process.env.ORDER_PAYMENT_WINDOW_MINUTES ||
+                      env.ORDER_PAYMENT_WINDOW_MINUTES ||
+                      60
+                  ) *
+                    60 *
+                    1000
+              )
+            : null,
         notes: finalNotes,
         items: {
           create: quote.lineSnapshots.map((item) => ({
@@ -234,20 +250,29 @@ export async function createOrder(input: CreateOrderInput) {
         // Atomically decrement stock for all tracked products within the same transaction
         await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${created.id} FOR UPDATE`;
         for (const item of created.items) {
-          if (item.productId) {
-            try {
-              await tx.product.updateMany({
-                where: {
-                  id: item.productId,
-                  trackInventory: true,
-                  stockQuantity: { gte: item.quantity },
-                },
-                data: {
-                  stockQuantity: { decrement: item.quantity },
-                },
-              });
-            } catch (stockErr) {
-              console.warn(`[Stock Decrement] Failed for product ${item.productId}:`, stockErr);
+          if (!item.productId) continue;
+          const prod = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { id: true, name: true, trackInventory: true, stockQuantity: true },
+          });
+          if (prod?.trackInventory) {
+            const decResult = await tx.product.updateMany({
+              where: {
+                id: item.productId,
+                trackInventory: true,
+                stockQuantity: { gte: item.quantity },
+              },
+              data: {
+                stockQuantity: { decrement: item.quantity },
+              },
+            });
+            if (decResult.count === 0) {
+              const err = new Error(
+                `Product "${prod.name || item.productName}" is out of stock. Requested: ${item.quantity}, Available: ${prod.stockQuantity}.`
+              );
+              (err as any).statusCode = 409;
+              (err as any).code = "OUT_OF_STOCK";
+              throw err;
             }
           }
         }
@@ -284,7 +309,7 @@ export async function createOrder(input: CreateOrderInput) {
     // If order was placed under PAY_AFTER_PROOF, increment coupon usage now (since no online gateway capture)
     if (normalizedPaymentMethod === "PAY_AFTER_PROOF" && quote.couponApplied) {
       try {
-        await db.discount.updateMany({
+        await client.discount.updateMany({
           where: { code: quote.couponApplied.code.toUpperCase() },
           data: { usedCount: { increment: 1 } },
         });
@@ -486,41 +511,72 @@ export async function listOrders(options?: {
 export async function updateOrderStatus(
   id: string,
   status: string,
-  tracking?: { trackingNumber?: string; courierPartner?: string; notes?: string }
+  tracking?: { trackingNumber?: string; courierPartner?: string; notes?: string },
+  client: typeof db = db
 ) {
   let normalizedStatus = status.toUpperCase();
   if (normalizedStatus === "SHIPPED") normalizedStatus = "DISPATCHED";
   if (normalizedStatus === "PROCESSING") normalizedStatus = "IN_PRODUCTION";
 
   try {
-    const result = await db.$transaction(async (tx) => {
+    const result = await client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
       const existing = await tx.order.findUnique({ where: { id }, include: { items: true } });
       if (!existing) return { success: false as const, error: "Order not found" };
 
       const targetStatus = normalizedStatus as OrderStatus;
       const isNowCancelled = targetStatus === OrderStatus.CANCELLED;
-      const wasAlreadyCancelled = existing.status === OrderStatus.CANCELLED;
-      const updated = await tx.order.update({
-        where: { id },
-        data: {
-          status: targetStatus,
-          ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
-          ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
-          ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
-        },
-        include: { items: true },
-      });
+      const now = new Date();
 
-      if (isNowCancelled && !wasAlreadyCancelled) {
-        for (const item of existing.items) {
-          if (!item.productId) continue;
-          await tx.product.updateMany({
-            where: { id: item.productId, trackInventory: true },
-            data: { stockQuantity: { increment: item.quantity } },
+      if (isNowCancelled) {
+        // Restock exactly once: only if stockRestoredAt is null
+        const claimRestock = await tx.order.updateMany({
+          where: { id, stockRestoredAt: null },
+          data: {
+            status: targetStatus,
+            stockRestoredAt: now,
+            ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
+            ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
+            ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+          },
+        });
+
+        if (claimRestock.count > 0) {
+          for (const item of existing.items) {
+            if (!item.productId) continue;
+            await tx.product.updateMany({
+              where: { id: item.productId, trackInventory: true },
+              data: { stockQuantity: { increment: item.quantity } },
+            });
+          }
+        } else {
+          // Already restocked, update status and tracking metadata
+          await tx.order.update({
+            where: { id },
+            data: {
+              status: targetStatus,
+              ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
+              ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
+              ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+            },
           });
         }
+      } else {
+        await tx.order.update({
+          where: { id },
+          data: {
+            status: targetStatus,
+            ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
+            ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
+            ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+          },
+        });
       }
+
+      const updated = await tx.order.findUnique({
+        where: { id },
+        include: { items: true },
+      });
       return { success: true as const, order: updated };
     });
 

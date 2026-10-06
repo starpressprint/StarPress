@@ -11,6 +11,7 @@
     "test:security": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/test-security.ts",
     "test:quote": "ts-node --compiler-options '{\"module\":\"commonjs\"}' scripts/test-quote.ts",
     "test:refund": "ts-node -r tsconfig-paths/register --compiler-options '{\"module\":\"commonjs\"}' scripts/test-refund-accounting.ts",
+    "test:inventory": "ts-node -r tsconfig-paths/register --compiler-options '{\"module\":\"commonjs\"}' scripts/test-inventory.ts",
     "prisma:studio": "prisma studio",
     "prisma:migrate": "prisma migrate dev"
   },

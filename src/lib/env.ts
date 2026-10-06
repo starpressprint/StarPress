@@ -44,6 +44,7 @@ const envSchema = z.object({
   ADMIN_EMAILS: z.string().optional(),
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  ORDER_PAYMENT_WINDOW_MINUTES: z.coerce.number().optional().default(60),
 });
 
 const rawValues = {
@@ -65,6 +66,7 @@ const rawValues = {
   ADMIN_EMAILS: process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS,
   UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
   UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
+  ORDER_PAYMENT_WINDOW_MINUTES: process.env.ORDER_PAYMENT_WINDOW_MINUTES,
 };
 
 const parsed = envSchema.safeParse(rawValues);
@@ -93,4 +95,5 @@ export const env = parsed.success
       NOTIFICATION_EMAIL: process.env.NOTIFICATION_EMAIL || "starpress.print@gmail.com",
       OWNER_ALERT_EMAIL: process.env.OWNER_ALERT_EMAIL || "starpress.print@gmail.com",
       CRON_SECRET: process.env.CRON_SECRET,
+      ORDER_PAYMENT_WINDOW_MINUTES: Number(process.env.ORDER_PAYMENT_WINDOW_MINUTES || 60),
     };
