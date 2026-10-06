@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     try {
       await db.adminAuditLog.create({
         data: {
-          adminEmail: auth.user?.email || "admin@starpress.in",
+          adminEmail: auth.user?.email || "admin@example.com",
           entityType: "category",
           entityId: params.id,
           action: "update",
@@ -131,7 +131,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     try {
       await db.adminAuditLog.create({
         data: {
-          adminEmail: auth.user?.email || "admin@starpress.in",
+          adminEmail: auth.user?.email || "admin@example.com",
           entityType: "category",
           entityId: params.id,
           action: "delete",

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { isUserAdmin } from "@/lib/admin/is-admin";
 
 // Protected customer routes requiring standard authentication
 const PROTECTED_CUSTOMER_ROUTES = [
@@ -87,6 +88,26 @@ export async function middleware(req: NextRequest) {
   const rawHost = req.headers.get("x-forwarded-host") || req.headers.get("host") || "";
   const { host, isAdminHost, adminUrl, storeUrl } = resolveDomains(rawHost);
 
+  // CORS restriction on payment routes (Phase 2.4)
+  if (pathname.startsWith("/api/payments/")) {
+    const origin = req.headers.get("origin") || "";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://starpress.in";
+    const allowedOrigins = [
+      appUrl,
+      "https://starpress.in",
+      "https://www.starpress.in",
+      "http://localhost:3000",
+      storeUrl,
+    ];
+
+    if (!pathname.includes("/webhook") && origin !== "" && !allowedOrigins.includes(origin)) {
+      return NextResponse.json(
+        { error: "Cross-origin payment requests are not permitted." },
+        { status: 403 }
+      );
+    }
+  }
+
   // 2. Determine if this route requires authentication checks
   const isProtectedCustomerRoute = PROTECTED_CUSTOMER_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
   const isAuthRoute = CUSTOMER_AUTH_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
@@ -107,14 +128,7 @@ export async function middleware(req: NextRequest) {
     const user = sessionData.user;
     isAuthenticated = !!user;
     
-    const userEmail = (user?.email || "").toLowerCase().trim();
-    isAdmin =
-      user?.app_metadata?.role === "ADMIN" ||
-      user?.user_metadata?.role === "ADMIN" ||
-      userEmail === "admin@starpress.in" ||
-      userEmail === "starpress.print@gmail.com" ||
-      userEmail === "mrdigitalmarketerpro@gmail.com" ||
-      Boolean(userEmail.endsWith("@starpress.in"));
+    isAdmin = isUserAdmin(user);
   }
 
   // Helper: preserve refreshed cookies and query strings across all redirects (no-cache headers to prevent browser caching)

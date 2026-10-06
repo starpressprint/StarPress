@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const ipAddress = request.headers.get("x-forwarded-for") || undefined;
-    const result = await createAdminProduct(body, auth.user?.email || "admin@starpress.in", ipAddress);
+    const result = await createAdminProduct(body, auth.user?.email || "admin@example.com", ipAddress);
 
     if (result.success && result.product) {
       revalidatePath("/shop");

@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     try {
       await db.adminAuditLog.create({
         data: {
-          adminEmail: auth.user?.email || "admin@starpress.in",
+          adminEmail: auth.user?.email || "admin@example.com",
           entityType: "category",
           entityId: category.id,
           action: "create",

@@ -76,7 +76,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       try {
         await db.adminAuditLog.create({
           data: {
-            adminEmail: auth.user?.email || "admin@starpress.in",
+            adminEmail: auth.user?.email || "admin@example.com",
             entityType: "order_notification",
             entityId: order.id,
             action: `whatsapp_${type}`,
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
             },
             body: JSON.stringify({
-              from: "StarPress Notifications <orders@starpress.in>",
+              from: `StarPress Notifications <${process.env.NOTIFICATION_EMAIL || "orders@example.com"}>`,
               to: [customerEmail],
               subject: emailData.subject,
               html: emailData.html,
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       try {
         await db.adminAuditLog.create({
           data: {
-            adminEmail: auth.user?.email || "admin@starpress.in",
+            adminEmail: auth.user?.email || "admin@example.com",
             entityType: "order_notification",
             entityId: order.id,
             action: `email_${type}`,

@@ -9,19 +9,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   uploadFile,
-  deleteFile,
-  validateImageFile,
+  deleteFiles,
+  verifyImageMagicBytes,
+  generateServerFilename,
   generateFilePath,
   extractPathFromUrl,
   BUCKETS,
+  PRODUCT_IMAGES_PREFIX,
+  CATEGORY_IMAGES_PREFIX,
+  ALLOWED_STORAGE_PREFIXES,
   type BucketName,
 } from '@/lib/supabase/storage';
+import { verifyAdminAccess } from '@/lib/admin/auth-check';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await verifyAdminAccess(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const formData = await request.formData();
 
     // Configuration from form fields
@@ -71,19 +81,13 @@ export async function POST(request: NextRequest) {
     }> = [];
 
     for (const file of files) {
-      // Validate
-      const validation = validateImageFile({
-        size: file.size,
-        type: file.type,
-        name: file.name,
-      });
-
-      if (!validation.valid) {
+      // 1. File size check (5 MB max)
+      if (file.size > 5 * 1024 * 1024) {
         results.push({
           success: false,
           filename: file.name,
           size: file.size,
-          error: validation.error,
+          error: `File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Max: 5 MB`,
         });
         continue;
       }
@@ -93,23 +97,38 @@ export async function POST(request: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // Generate unique path
-        const filePath = generateFilePath(folder, entityId, file.name);
+        // 2. Authoritative Magic Bytes verification (JPEG, PNG, WebP, GIF, AVIF)
+        // Do NOT trust file.type provided by client
+        const magic = verifyImageMagicBytes(buffer);
+        if (!magic.valid || !magic.mimeType || !magic.extension) {
+          results.push({
+            success: false,
+            filename: file.name,
+            size: file.size,
+            error: magic.error || 'Magic byte verification failed: unsupported image format.',
+          });
+          continue;
+        }
 
-        // Upload to Supabase Storage
-        const { url, path } = await uploadFile(
+        // 3. Generate filename strictly server-side (do NOT use client file.name)
+        const serverFilename = generateServerFilename(magic.extension);
+        const targetPrefix = bucket === BUCKETS.CATEGORY_IMAGES ? CATEGORY_IMAGES_PREFIX : PRODUCT_IMAGES_PREFIX;
+        const filePath = generateFilePath(folder, entityId, serverFilename, targetPrefix);
+
+        // 4. Upload to Supabase Storage with validated MIME type
+        const { url, path: storagePath } = await uploadFile(
           bucket as BucketName,
           filePath,
           buffer,
-          file.type
+          magic.mimeType
         );
 
         results.push({
           success: true,
           url,
-          path,
-          filename: file.name,
-          size: file.size,
+          path: storagePath,
+          filename: serverFilename,
+          size: buffer.length,
         });
       } catch (err: any) {
         results.push({
@@ -140,25 +159,119 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { bucket = BUCKETS.PRODUCT_IMAGES, path, url } = body;
-
-    // Determine file path
-    let filePath = path;
-    if (!filePath && url) {
-      filePath = extractPathFromUrl(url, bucket as BucketName);
+    const auth = await verifyAdminAccess(request);
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    if (!filePath) {
+    const body = await request.json().catch(() => ({}));
+    const { bucket = BUCKETS.PRODUCT_IMAGES, path, url } = body;
+
+    // Validate bucket name
+    const validBuckets = Object.values(BUCKETS);
+    if (!validBuckets.includes(bucket as BucketName)) {
       return NextResponse.json(
-        { error: 'Provide either "path" or "url" to identify the file to delete.' },
+        { error: `Invalid bucket: ${bucket}. Allowed: ${validBuckets.join(', ')}` },
         { status: 400 }
       );
     }
 
-    const success = await deleteFile(bucket as BucketName, filePath);
+    // Determine target file path
+    let rawPath = typeof path === 'string' ? path.trim() : '';
+    if (!rawPath && typeof url === 'string') {
+      rawPath = (extractPathFromUrl(url, bucket as BucketName) || '').trim();
+    }
 
-    return NextResponse.json({ success, path: filePath });
+    if (!rawPath) {
+      return NextResponse.json(
+        { error: 'Provide either a valid "path" or "url" to identify the file to delete.' },
+        { status: 400 }
+      );
+    }
+
+    // Security pre-check: Reject leading slashes, backslashes, path traversal, %2e
+    if (rawPath.startsWith('/')) {
+      return NextResponse.json(
+        { error: 'Invalid path: leading slashes are not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (rawPath.includes('\\')) {
+      return NextResponse.json(
+        { error: 'Invalid path: backslashes are not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (rawPath.includes('..')) {
+      return NextResponse.json(
+        { error: 'Invalid path: path traversal is not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (rawPath.toLowerCase().includes('%2e')) {
+      return NextResponse.json(
+        { error: 'Invalid path: encoded dots (%2e) are not allowed.' },
+        { status: 400 }
+      );
+    }
+
+    // Decode path once with decodeURIComponent before validation
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(rawPath);
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid path: failed to decode URL encoded characters.' },
+        { status: 400 }
+      );
+    }
+
+    // Post-decode security checks
+    if (decodedPath.startsWith('/')) {
+      return NextResponse.json(
+        { error: 'Invalid path: leading slashes are not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (decodedPath.includes('\\')) {
+      return NextResponse.json(
+        { error: 'Invalid path: backslashes are not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (decodedPath.includes('..')) {
+      return NextResponse.json(
+        { error: 'Invalid path: path traversal is not allowed.' },
+        { status: 400 }
+      );
+    }
+    if (decodedPath.toLowerCase().includes('%2e')) {
+      return NextResponse.json(
+        { error: 'Invalid path: encoded dots (%2e) are not allowed.' },
+        { status: 400 }
+      );
+    }
+
+    // Strictly enforce allowed prefix (with trailing slash)
+    const matchedPrefix = ALLOWED_STORAGE_PREFIXES.find((prefix) =>
+      decodedPath.startsWith(prefix)
+    );
+
+    if (!matchedPrefix) {
+      return NextResponse.json(
+        {
+          error: `Invalid path: only paths starting with ${ALLOWED_STORAGE_PREFIXES.map((p) => `'${p}'`).join(' or ')} are permitted.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Candidate keys for bucket deletion: full prefixed path and relative key inside bucket
+    const relativeKey = decodedPath.slice(matchedPrefix.length);
+
+    const success = await deleteFiles(bucket as BucketName, [decodedPath, relativeKey]);
+
+    return NextResponse.json({ success, path: decodedPath });
   } catch (err: any) {
     console.error('[Upload API DELETE] error:', err);
     return NextResponse.json(

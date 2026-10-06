@@ -5,11 +5,21 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { rateLimitDistributed, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const rl = await rateLimitDistributed(`discounts:validate:${ip}`, 15, 60);
+    if (!rl.success) {
+      return rateLimitExceededResponse(
+        rl,
+        "Too many coupon validation requests. Please wait a moment before trying again."
+      );
+    }
+
     const body = await request.json();
     const { code, cartSubtotal } = body;
 

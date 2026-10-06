@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createBulkOrderInquiry, BulkOrderInquiryInput } from "@/server/inquiries";
+import { rateLimitDistributed, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const rl = await rateLimitDistributed(`inquiries:bulk:${ip}`, 10, 60);
+    if (!rl.success) {
+      return rateLimitExceededResponse(rl, "Too many inquiry submissions. Please wait a moment.");
+    }
+
     const body = (await request.json()) as BulkOrderInquiryInput;
 
     if (!body.name || !body.phone) {

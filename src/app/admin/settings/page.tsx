@@ -742,7 +742,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-xs font-medium text-white">Admin Email Alert on New Order</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Sends copy of each order receipt to orders@starpress.in.
+                      Sends copy of each order receipt to store notification email.
                     </p>
                   </div>
                   <span className="text-xs font-bold text-emerald-400">ENABLED</span>

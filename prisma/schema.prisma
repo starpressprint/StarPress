@@ -131,6 +131,8 @@ model Product {
 
   @@index([status])
   @@index([categoryId])
+  @@index([isActive, isFeatured])
+  @@index([createdAt])
 }
 
 model ProductImage {
@@ -193,6 +195,9 @@ model CartItem {
   createdAt DateTime @default(now())
   cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
   product   Product  @relation(fields: [productId], references: [id])
+
+  @@index([cartId])
+  @@index([productId])
 }
 
 model Order {
@@ -217,11 +222,25 @@ model Order {
   notes           String?
   trackingNumber  String?
   courierPartner  String?
+  paymentExpiresAt DateTime?
+  refundAmount     Decimal?             @db.Decimal(10, 2)
+  refundFlag       String?
+  refundId         String?
+  refundStatus     String?
+  disputeReason    String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   user            User?                @relation(fields: [userId], references: [id])
   items           OrderItem[]
   transactions    PaymentTransaction[]
+  refunds         Refund[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([razorpayOrderId])
+  @@index([createdAt])
+  @@index([paymentExpiresAt])
 }
 
 model OrderItem {
@@ -240,6 +259,9 @@ model OrderItem {
   createdAt   DateTime @default(now())
   order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product     Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
 }
 
 model PaymentTransaction {
@@ -247,15 +269,61 @@ model PaymentTransaction {
   orderId          String
   gateway          String   @default("RAZORPAY")
   gatewayOrderId   String?
-  gatewayPaymentId String?
+  gatewayPaymentId String?  @unique
   gatewaySignature String?
   method           String?
   amount           Decimal  @db.Decimal(10, 2)
   currency         String   @default("INR")
   status           String
+  errorCode        String?
+  errorDescription String?
+  refundId         String?
+  refundStatus     String?
+  bank             String?
+  wallet           String?
+  vpa              String?
+  cardLast4        String?
+  cardNetwork      String?
+  international    Boolean  @default(false)
   rawPayload       Json?
   createdAt        DateTime @default(now())
   order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayPaymentId])
+  @@index([orderId, status])
+  @@index([createdAt])
+}
+
+model Refund {
+  id               String   @id @default(cuid())
+  razorpayRefundId String   @unique
+  orderId          String
+  paymentId        String?
+  amount           Decimal  @db.Decimal(10, 2)
+  status           String   @default("initiated")
+  reason           String?
+  source           String   @default("WEBHOOK")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+}
+
+model PaymentAuditLog {
+  id        String   @id @default(cuid())
+  orderId   String?
+  action    String
+  actor     String?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model CustomizationRequest {

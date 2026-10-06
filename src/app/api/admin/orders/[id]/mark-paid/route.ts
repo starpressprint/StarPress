@@ -57,7 +57,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     try {
       await db.adminAuditLog.create({
         data: {
-          adminEmail: auth.user?.email || "admin@starpress.in",
+          adminEmail: auth.user?.email || "admin@example.com",
           entityType: "order",
           entityId: order.id,
           action: "manual_mark_paid",

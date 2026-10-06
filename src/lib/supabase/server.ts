@@ -57,6 +57,8 @@ export async function getAuthenticatedUser() {
   }
 }
 
+import { isUserAdmin } from "@/lib/admin/is-admin";
+
 /**
  * Normalized user session helper for API routes.
  * Maps Supabase user identity to application user contract.
@@ -74,13 +76,15 @@ export async function getSessionUser() {
     email,
     name: metadata.name || metadata.full_name || (email ? email.split("@")[0] : "Customer"),
     phone: supabaseUser.phone || metadata.phone || null,
-    role: appMetadata.role || metadata.role || "CUSTOMER",
+    role: isUserAdmin(supabaseUser) ? "ADMIN" : (appMetadata.role || "CUSTOMER"),
+    app_metadata: appMetadata,
+    email_confirmed_at: supabaseUser.email_confirmed_at,
   };
 }
 
 /**
  * Defense-in-depth server authorization check for Admin privileges.
- * NEVER trusts client-side metadata; verifies authoritative `app_metadata.role === 'ADMIN'`.
+ * NEVER trusts client-side metadata; verifies authoritative isUserAdmin check.
  */
 export async function requireAdmin() {
   const user = await getAuthenticatedUser();
@@ -88,8 +92,7 @@ export async function requireAdmin() {
     return { authorized: false, error: "Unauthorized: No active session", user: null };
   }
 
-  const role = user.app_metadata?.role;
-  if (role !== "ADMIN") {
+  if (!isUserAdmin(user)) {
     return { authorized: false, error: "Forbidden: Administrative access required", user };
   }
 

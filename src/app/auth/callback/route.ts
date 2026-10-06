@@ -48,7 +48,9 @@ export async function GET(request: Request) {
           email: data.user.email,
           name: data.user.user_metadata?.name || data.user.user_metadata?.full_name,
           phone: data.user.phone || data.user.user_metadata?.phone,
-          role: data.user.app_metadata?.role || data.user.user_metadata?.role,
+          role: data.user.app_metadata?.role,
+          app_metadata: data.user.app_metadata,
+          email_confirmed_at: data.user.email_confirmed_at,
         });
       } catch (syncErr) {
         console.warn("[Auth Callback] User sync notice:", syncErr);
@@ -85,7 +87,9 @@ export async function GET(request: Request) {
           email: data.user.email,
           name: data.user.user_metadata?.name || data.user.user_metadata?.full_name,
           phone: data.user.phone || data.user.user_metadata?.phone,
-          role: data.user.app_metadata?.role || data.user.user_metadata?.role,
+          role: data.user.app_metadata?.role,
+          app_metadata: data.user.app_metadata,
+          email_confirmed_at: data.user.email_confirmed_at,
         });
       } catch (syncErr) {
         console.warn("[Auth Callback] User sync notice:", syncErr);

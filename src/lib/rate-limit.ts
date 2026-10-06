@@ -91,6 +91,64 @@ export function rateLimit(
 }
 
 /**
+ * Asynchronous rate limiter supporting Upstash Redis / Vercel KV REST API.
+ * Automatically falls back to in-memory sliding window when Redis credentials are not configured or network fails.
+ */
+export async function rateLimitDistributed(
+  identifier: string,
+  limit = 5,
+  windowSeconds = 300
+): Promise<RateLimitResult> {
+  const restUrl =
+    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const restToken =
+    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+  if (restUrl && restToken) {
+    try {
+      const key = `ratelimit:${identifier}`;
+      const now = Math.floor(Date.now() / 1000);
+      const reset = now + windowSeconds;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+
+      const res = await fetch(`${restUrl}/pipeline`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${restToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify([
+          ["INCR", key],
+          ["EXPIRE", key, windowSeconds, "NX"],
+        ]),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        const currentCount = Number(data[0]?.result || 1);
+        const remaining = Math.max(0, limit - currentCount);
+
+        return {
+          success: currentCount <= limit,
+          limit,
+          remaining,
+          reset,
+        };
+      }
+    } catch (redisErr) {
+      console.warn("[RateLimit] Distributed Redis check failed, falling back to in-memory:", redisErr);
+    }
+  }
+
+  // Graceful fallback to in-memory sliding window
+  return rateLimit(identifier, limit, windowSeconds);
+}
+
+/**
  * Extract client IP address safely from standard proxy headers
  */
 export function getClientIp(req: NextRequest | Request): string {

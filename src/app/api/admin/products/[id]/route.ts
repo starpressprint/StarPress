@@ -60,7 +60,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const result = await updateAdminProduct(
       params.id,
       body,
-      auth.user?.email || "admin@starpress.in",
+      auth.user?.email || "admin@example.com",
       ipAddress
     );
 
@@ -96,7 +96,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const ipAddress = request.headers.get("x-forwarded-for") || undefined;
     const result = await deleteAdminProduct(
       params.id,
-      auth.user?.email || "admin@starpress.in",
+      auth.user?.email || "admin@example.com",
       ipAddress
     );
 

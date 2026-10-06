@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { isUserAdmin } from '@/lib/admin/is-admin';
 
 export interface AuthUser {
   id: string;
@@ -11,6 +12,8 @@ export interface AuthUser {
   name: string;
   phone?: string | null;
   role?: string;
+  email_confirmed_at?: string | null;
+  app_metadata?: any;
 }
 
 export interface AuthState {
@@ -39,15 +42,8 @@ function sanitizeUser(supabaseUser: User | null): AuthUser | null {
     metadata.full_name ||
     (email ? email.split('@')[0] : 'Customer');
 
-  const cleanEmail = email.toLowerCase().trim();
-  const isDeclaredAdmin =
-    appMetadata.role === 'ADMIN' ||
-    metadata.role === 'ADMIN' ||
-    cleanEmail === 'admin@starpress.in' ||
-    cleanEmail === 'starpress.print@gmail.com' ||
-    cleanEmail === 'mrdigitalmarketerpro@gmail.com' ||
-    Boolean(cleanEmail && cleanEmail.endsWith('@starpress.in'));
-  const role = isDeclaredAdmin ? 'ADMIN' : (appMetadata.role || metadata.role || 'CUSTOMER');
+  const isAdmin = isUserAdmin(supabaseUser);
+  const role = isAdmin ? 'ADMIN' : (appMetadata.role || 'CUSTOMER');
 
   const phone = (supabaseUser.phone || metadata.phone || null) as string | null;
 
@@ -57,6 +53,8 @@ function sanitizeUser(supabaseUser: User | null): AuthUser | null {
     name,
     phone,
     role,
+    email_confirmed_at: supabaseUser.email_confirmed_at,
+    app_metadata: appMetadata,
   };
 }
 
@@ -179,12 +177,7 @@ export function useAuthSession(): AuthState {
     []
   );
 
-  const isAdmin =
-    user?.role === 'ADMIN' ||
-    user?.email?.toLowerCase() === 'admin@starpress.in' ||
-    user?.email?.toLowerCase() === 'starpress.print@gmail.com' ||
-    user?.email?.toLowerCase() === 'mrdigitalmarketerpro@gmail.com' ||
-    Boolean(user?.email?.toLowerCase().endsWith('@starpress.in'));
+  const isAdmin = isUserAdmin(user);
   const session = useMemo(() => (user ? { user } : null), [user]);
 
   return {

@@ -40,7 +40,7 @@ export default function AdminTopbar() {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const userEmail = session?.user?.email || 'admin@starpress.in';
+  const userEmail = session?.user?.email || 'admin@example.com';
   const userName = session?.user?.name || 'Administrator';
   const userInitial = userName.charAt(0).toUpperCase();
 

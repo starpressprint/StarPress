@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
             email,
             name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || email.split("@")[0] || "Customer",
             phone: data.user.phone || data.user.user_metadata?.phone || null,
-            role: data.user.app_metadata?.role || data.user.user_metadata?.role || "CUSTOMER"
+            role: data.user.app_metadata?.role || "CUSTOMER"
           };
         }
       }
@@ -38,6 +38,12 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
+    }
+
+    const { rateLimitDistributed, rateLimitExceededResponse } = await import("@/lib/rate-limit");
+    const rl = await rateLimitDistributed(`account:orders:${user.id}`, 30, 60);
+    if (!rl.success) {
+      return rateLimitExceededResponse(rl, "Too many orders requests.");
     }
 
     const email = (user.email || "").toLowerCase().trim();

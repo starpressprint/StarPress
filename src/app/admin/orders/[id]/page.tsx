@@ -720,7 +720,7 @@ export default function OrderDetailPage() {
             <h1 className="text-2xl font-bold tracking-tight">STARPRESS</h1>
             <p className="text-xs text-gray-600">Premium Commercial & Business Printing</p>
             <p className="text-xs text-gray-600">GSTIN: 07AAACS1429B1Z8</p>
-            <p className="text-xs text-gray-600">support@starpress.in | https://starpress.in</p>
+            <p className="text-xs text-gray-600">Official Store Invoice | Star Press</p>
           </div>
           <div className="text-right">
             <h2 className="text-lg font-bold">TAX INVOICE</h2>

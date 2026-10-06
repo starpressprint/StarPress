@@ -240,7 +240,7 @@ function AdminLoginForm() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@starpress.in"
+                  placeholder="admin@example.com"
                   required
                   autoComplete="username"
                   disabled={isLoading || lockoutTimer > 0}

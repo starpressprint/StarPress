@@ -34,7 +34,7 @@ export default function AdminHeader({ activeSection = "orders" }: AdminHeaderPro
     }
   };
 
-  const userEmail = session?.user?.email || "admin@starpress.in";
+  const userEmail = session?.user?.email || "admin@example.com";
   const userRole = session?.user?.role || "OPERATIONS";
 
   return (

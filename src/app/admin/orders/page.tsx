@@ -65,6 +65,10 @@ export default function OrdersPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundAmount, setRefundAmount] = useState('');
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
 
   const [orderStats, setOrderStats] = useState({
     total: 0,
@@ -209,6 +213,41 @@ export default function OrdersPage() {
       showToast(err?.message || 'Error marking order as paid', 'error');
     } finally {
       setIsMarkingPaid(false);
+    }
+  };
+
+  const handleIssueRefund = async () => {
+    if (!selectedOrder) return;
+    if (!refundReason.trim()) {
+      showToast('A refund reason is required', 'error');
+      return;
+    }
+
+    setIsSubmittingRefund(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${selectedOrder.id}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reason: refundReason.trim(),
+          amount: refundAmount.trim() ? Number(refundAmount) : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to issue refund');
+      }
+
+      showToast(`Refund of ₹${data.amount} initiated successfully.`);
+      setRefundModalOpen(false);
+      setRefundReason('');
+      setRefundAmount('');
+      loadOrders();
+    } catch (err: any) {
+      showToast(err.message || 'Refund failed', 'error');
+    } finally {
+      setIsSubmittingRefund(false);
     }
   };
 
@@ -625,9 +664,23 @@ export default function OrdersPage() {
                       </div>
                     )
                   ) : (
-                    <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 flex items-center gap-2">
-                      <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-                      <span>Payment captured and verified. Order is confirmed for print production.</span>
+                    <div className="space-y-2">
+                      <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300 flex items-center gap-2">
+                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                        <span>Payment captured and verified. Order is confirmed for print production.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRefundAmount('');
+                          setRefundReason('');
+                          setRefundModalOpen(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 h-8 rounded-xl text-xs font-semibold bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 transition-all cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        <span>Issue Refund (Partial or Full)</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -742,6 +795,92 @@ export default function OrdersPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Refund Modal */}
+      {refundModalOpen && selectedOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-bg-surface border border-border-subtle rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
+              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                <RotateCcw size={16} />
+                <span>Issue Razorpay Refund</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRefundModalOpen(false)}
+                className="text-text-muted hover:text-white"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="text-xs text-text-secondary space-y-1">
+              <p>
+                Initiate an automated refund via Razorpay for Order <strong className="font-mono text-white">#{selectedOrder.orderNumber}</strong>.
+              </p>
+              <p className="text-[11px] text-text-muted">
+                Order Total: <strong className="text-brand-yellow font-mono">₹{formatPrice(selectedOrder.total)}</strong>
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-semibold text-text-muted uppercase tracking-wider block mb-1">
+                  Refund Amount (₹) <span className="text-text-muted font-normal">(Leave blank for full amount)</span>
+                </label>
+                <input
+                  type="number"
+                  placeholder={`Full amount: ${selectedOrder.total}`}
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-border-subtle bg-bg-surface-alt text-xs text-white focus:outline-none focus:border-brand-yellow"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-text-muted uppercase tracking-wider block mb-1">
+                  Reason for Refund <span className="text-rose-400">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. Customer cancelled before proofing, quality defect, double charged"
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-border-subtle bg-bg-surface-alt text-xs text-white focus:outline-none focus:border-brand-yellow resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRefundModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-border-subtle text-xs text-text-muted hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleIssueRefund}
+                disabled={isSubmittingRefund || !refundReason.trim()}
+                className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isSubmittingRefund ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Processing Refund...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw size={14} />
+                    <span>Confirm &amp; Refund</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

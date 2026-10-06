@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Lock,
   Loader2,
+  CreditCard,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
@@ -38,6 +39,8 @@ interface OrderRecord {
   status: string;
   totalAmount: number;
   paymentStatus: string;
+  paymentMethod?: string | null;
+  paymentExpiresAt?: string | null;
   trackingNumber?: string | null;
   courierPartner?: string | null;
   createdAt: string;
@@ -470,6 +473,23 @@ function AccountContent() {
                           <span>Live Tracking</span>
                           <ExternalLink size={12} />
                         </a>
+                      </div>
+                    )}
+
+                    {/* Payment Recovery Action for Unpaid Orders */}
+                    {ord.paymentStatus !== "PAID" && ord.status !== "CANCELLED" && (
+                      <div className="pt-3 border-t border-border-subtle/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-amber-500/5 -mx-6 -mb-6 p-4 rounded-b-2xl border-t border-amber-500/20">
+                        <div className="flex items-center gap-2 text-amber-400 text-xs font-medium">
+                          <CreditCard size={15} />
+                          <span>Payment incomplete — complete payment now to start production.</span>
+                        </div>
+                        <Link
+                          href={`/account/orders/${ord.id}/pay`}
+                          className="px-4 py-2 rounded-xl bg-brand-yellow hover:bg-yellow-400 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-brand-yellow/10 transition-colors shrink-0"
+                        >
+                          <CreditCard size={13} />
+                          <span>Complete Payment</span>
+                        </Link>
                       </div>
                     )}
                   </div>

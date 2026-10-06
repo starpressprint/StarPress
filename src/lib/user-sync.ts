@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
+import { UserForAdminCheck } from "@/lib/admin/is-admin";
 
-export interface UserInput {
+export interface UserInput extends UserForAdminCheck {
   id: string;
   email?: string | null;
   name?: string | null;
@@ -32,12 +33,9 @@ export async function ensureDbUser(user: UserInput) {
     }
 
     // 2. Create the user record in Prisma
-    const isAdmin =
-      user.role === "ADMIN" ||
-      email === "admin@starpress.in" ||
-      email === "starpress.print@gmail.com" ||
-      email === "mrdigitalmarketerpro@gmail.com" ||
-      email.endsWith("@starpress.in");
+    // Ensure user-sync NEVER writes role ADMIN based on email.
+    // Database role ADMIN is strictly assigned if authoritative app_metadata.role === "ADMIN"
+    const isAppAdmin = user.app_metadata?.role === "ADMIN";
 
     return await db.user.create({
       data: {
@@ -45,7 +43,7 @@ export async function ensureDbUser(user: UserInput) {
         email,
         name: user.name || email.split("@")[0] || "Customer",
         phone: user.phone || null,
-        role: isAdmin ? "ADMIN" : "CUSTOMER",
+        role: isAppAdmin ? "ADMIN" : "CUSTOMER",
       },
     });
   } catch (error) {

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createRazorpayOrder } from "@/server/payments";
 import { getSessionUser } from "@/lib/supabase/server";
+import { rateLimitDistributed, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
+import { auditPaymentEvent } from "@/server/payment-audit";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,13 @@ export async function POST(request: NextRequest) {
       user = await getSessionUser();
     } catch {}
 
+    const ip = getClientIp(request);
+    const key = user ? `payment:create:${user.id}` : `payment:create:${ip}`;
+    const rl = await rateLimitDistributed(key, 5, 60);
+    if (!rl.success) {
+      return rateLimitExceededResponse(rl, "Too many payment requests. Please wait before retrying.");
+    }
+
     if (!user) {
       return NextResponse.json(
         { error: "Unauthorized. Please sign in to initiate payment." },
@@ -28,10 +37,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { isUserAdmin } = await import("@/lib/admin/is-admin");
+    const isAdmin = isUserAdmin(user);
+
     const razorpayOrder = await createRazorpayOrder({
       orderId,
       sessionUserId: user.id,
       sessionUserEmail: user.email,
+      isAdmin,
+    });
+
+    await auditPaymentEvent({
+      orderId,
+      action: "RAZORPAY_ORDER_CREATED",
+      actor: user.id,
+      ipAddress: ip,
+      userAgent: request.headers.get("user-agent") || undefined,
+      details: {
+        razorpayOrderId: razorpayOrder.razorpayOrderId,
+        amount: razorpayOrder.amount,
+        isMock: razorpayOrder.isMock || false,
+      },
     });
 
     return NextResponse.json({

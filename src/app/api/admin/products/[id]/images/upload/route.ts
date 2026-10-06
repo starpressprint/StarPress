@@ -59,11 +59,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         );
       }
     } else {
+      const { verifyImageMagicBytes } = await import("@/lib/supabase/storage");
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        if (file.size > 5 * 1024 * 1024) {
+          return NextResponse.json(
+            { error: `File too large: ${(file.size / 1024 / 1024).toFixed(1)} MB. Max: 5 MB` },
+            { status: 400 }
+          );
+        }
+
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
-        const mimeType = file.type || "image/jpeg";
+
+        // Verify magic bytes
+        const magic = verifyImageMagicBytes(buffer);
+        if (!magic.valid || !magic.mimeType) {
+          return NextResponse.json(
+            { error: magic.error || "Magic byte verification failed: invalid image format." },
+            { status: 400 }
+          );
+        }
+
+        const mimeType = magic.mimeType;
         const base64Data = `data:${mimeType};base64,${buffer.toString("base64")}`;
 
         newImages.push({

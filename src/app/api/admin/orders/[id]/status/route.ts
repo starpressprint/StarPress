@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       notes,
     });
 
-    if (!result.success) {
+    if (!result.success || !("order" in result)) {
       return NextResponse.json(
         { error: result.error || "Failed to update order status." },
         { status: 500 }

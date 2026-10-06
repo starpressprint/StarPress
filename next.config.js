@@ -55,6 +55,24 @@ const nextConfig = {
         source: "/:path*",
         headers: [
           {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com https://api.razorpay.com",
+              "frame-src 'self' https://api.razorpay.com https://checkout.razorpay.com",
+              "connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com https://*.razorpay.com https://*.supabase.co wss://*.supabase.co",
+              "img-src 'self' data: blob: https://*.supabase.co https://*.razorpay.com https://*.cloudinary.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "object-src 'none'",
+              "base-uri 'self'",
+            ].join("; "),
+          },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
             key: "X-DNS-Prefetch-Control",
             value: "on",
           },
@@ -78,6 +96,13 @@ const nextConfig = {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
           },
+        ],
+      },
+      {
+        source: "/api/payments/razorpay/webhook",
+        headers: [
+          { key: "Content-Security-Policy", value: "default-src 'none'" },
+          { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],
       },
     ];

@@ -95,6 +95,7 @@ export default function CheckoutPage() {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [recoveryOrderId, setRecoveryOrderId] = useState<string | null>(null);
 
   // Quote State from Server
   const [serverQuote, setServerQuote] = useState<{
@@ -454,8 +455,9 @@ export default function CheckoutPage() {
           ondismiss: function () {
             setIsSubmitting(false);
             setStatusMessage(null);
+            setRecoveryOrderId(placedOrder.id);
             setCheckoutError(
-              "Payment window was closed before completion. Your cart items are preserved — you may retry whenever you are ready."
+              "Payment window was closed before completion. Your order has been preserved — you may retry payment whenever you are ready."
             );
           },
         },
@@ -497,6 +499,7 @@ export default function CheckoutPage() {
             window.scrollTo({ top: 0, behavior: "smooth" });
           } catch (vErr: any) {
             console.error("Payment verification error:", vErr);
+            setRecoveryOrderId(placedOrder.id);
             setCheckoutError(vErr.message);
           } finally {
             setIsSubmitting(false);
@@ -510,6 +513,7 @@ export default function CheckoutPage() {
       razorpayInstance.on("payment.failed", function (resp: any) {
         setIsSubmitting(false);
         setStatusMessage(null);
+        setRecoveryOrderId(placedOrder.id);
         setCheckoutError(
           resp.error?.description || "Payment failed at card/bank network. Please retry with another payment method."
         );
@@ -722,12 +726,22 @@ export default function CheckoutPage() {
 
         {/* Global Error Notice */}
         {checkoutError && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex items-start gap-3">
-            <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="font-bold text-rose-200">Checkout Notice</p>
-              <p>{checkoutError}</p>
+          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-rose-200">Checkout Notice</p>
+                <p>{checkoutError}</p>
+              </div>
             </div>
+            {recoveryOrderId && (
+              <Link
+                href={`/account/orders/${recoveryOrderId}/pay`}
+                className="px-4 py-2 rounded-xl bg-brand-yellow hover:bg-yellow-400 text-black text-xs font-bold flex items-center gap-1.5 shadow-md shadow-brand-yellow/10 transition-colors shrink-0 self-start sm:self-auto"
+              >
+                <span>Retry Payment Securely →</span>
+              </Link>
+            )}
           </div>
         )}
 
@@ -1100,6 +1114,8 @@ export default function CheckoutPage() {
                         required={formData.isGstRequired}
                         placeholder="07AAAAA0000A1Z5"
                         maxLength={15}
+                        pattern="^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$"
+                        title="Enter a valid 15-character GSTIN (e.g. 07AAAAA0000A1Z5)"
                         value={formData.gstin}
                         onChange={handleInputChange}
                         className="w-full rounded-xl bg-bg-surface-alt border border-border-subtle px-4 py-3 text-sm text-white placeholder-text-muted focus:outline-none focus:border-brand-yellow uppercase font-mono"

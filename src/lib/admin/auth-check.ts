@@ -5,26 +5,20 @@ import { isUserAdmin } from "./is-admin";
 export { isUserAdmin };
 
 export async function verifyAdminAccess(request?: NextRequest) {
-  const user = await getAuthenticatedUser();
+  try {
+    const user = await getAuthenticatedUser();
 
-  if (user) {
+    if (!user) {
+      return { authorized: false, status: 401, error: "Unauthorized: Admin session required." };
+    }
+
     const isAdmin = isUserAdmin(user);
     if (isAdmin) {
       return { authorized: true, user };
     }
-  }
 
-  // In local development, permit admin panel access for development & local testing
-  if (process.env.NODE_ENV !== "production") {
-    return {
-      authorized: true,
-      user: user || { email: "admin@starpress.in", id: "dev-admin", name: "Star Press Admin" },
-    };
+    return { authorized: false, status: 403, error: "Forbidden: Star Press administrative privileges required." };
+  } catch (error) {
+    return { authorized: false, status: 500, error: "Internal Server Error during authorization." };
   }
-
-  if (!user) {
-    return { authorized: false, status: 401, error: "Unauthorized: Admin session required." };
-  }
-
-  return { authorized: false, status: 403, error: "Forbidden: Star Press administrative privileges required." };
 }

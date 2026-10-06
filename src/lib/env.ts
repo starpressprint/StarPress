@@ -40,6 +40,10 @@ const envSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   NOTIFICATION_EMAIL: z.string().optional().default("starpress.print@gmail.com"),
   OWNER_ALERT_EMAIL: z.string().optional().default("starpress.print@gmail.com"),
+  CRON_SECRET: z.string().optional(),
+  ADMIN_EMAILS: z.string().optional(),
+  UPSTASH_REDIS_REST_URL: z.string().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });
 
 const rawValues = {
@@ -57,6 +61,10 @@ const rawValues = {
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   NOTIFICATION_EMAIL: process.env.NOTIFICATION_EMAIL,
   OWNER_ALERT_EMAIL: process.env.OWNER_ALERT_EMAIL,
+  CRON_SECRET: process.env.CRON_SECRET,
+  ADMIN_EMAILS: process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS,
+  UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
+  UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
 };
 
 const parsed = envSchema.safeParse(rawValues);
@@ -84,4 +92,5 @@ export const env = parsed.success
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       NOTIFICATION_EMAIL: process.env.NOTIFICATION_EMAIL || "starpress.print@gmail.com",
       OWNER_ALERT_EMAIL: process.env.OWNER_ALERT_EMAIL || "starpress.print@gmail.com",
+      CRON_SECRET: process.env.CRON_SECRET,
     };

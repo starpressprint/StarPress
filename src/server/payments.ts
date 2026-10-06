@@ -6,11 +6,13 @@ import {
   sendPaymentFailedEmail,
   notifyOwnerOrderPaid,
 } from "@/server/email";
+import { auditPaymentEvent } from "@/server/payment-audit";
 
 export interface CreateRazorpayOrderInput {
   orderId: string;
   sessionUserId?: string;
   sessionUserEmail?: string;
+  isAdmin?: boolean;
 }
 
 export function isProductionEnvironment(): boolean {
@@ -56,10 +58,15 @@ export async function createRazorpayOrder(input: CreateRazorpayOrderInput) {
     throw err;
   }
 
-  // 3. Ownership check: if sessionUserId or sessionUserEmail provided
-  if (input.sessionUserId && order.userId && order.userId !== input.sessionUserId) {
-    const err = new Error("Forbidden: You do not have permission to pay for this order.");
-    (err as any).statusCode = 403;
+  // 3. Ownership check: strictly verify order ownership or admin clearance
+  const isOwner =
+    (input.sessionUserId && order.userId === input.sessionUserId) ||
+    (input.sessionUserEmail && order.guestEmail && order.guestEmail.toLowerCase().trim() === input.sessionUserEmail.toLowerCase().trim());
+  const isAdmin = Boolean(input.isAdmin);
+
+  if ((order.userId || order.guestEmail) && (input.sessionUserId || input.sessionUserEmail) && !isOwner && !isAdmin) {
+    const err = new Error("Order not found.");
+    (err as any).statusCode = 404;
     throw err;
   }
 
@@ -293,6 +300,8 @@ export async function recordPaymentSuccess(params: {
 
     // 2. Atomic database update: mark order PAID and create PaymentTransaction
     const updatedOrder = await db.$transaction(async (tx) => {
+      // Serialize capture against expiry/restock for this order.
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${params.orderId} FOR UPDATE`;
       // Find current order
       const targetOrder = await tx.order.findUnique({
         where: { id: params.orderId },
@@ -302,9 +311,54 @@ export async function recordPaymentSuccess(params: {
         throw new Error(`Order ${params.orderId} not found for payment recording.`);
       }
 
+      // Extract payment method details
+      const payload = params.rawPayload || {};
+      const cardInfo = payload.card || {};
+      const bank = payload.bank || cardInfo.bank || null;
+      const wallet = payload.wallet || null;
+      const vpa = payload.vpa || null;
+      const cardLast4 = cardInfo.last4 || null;
+      const cardNetwork = cardInfo.network || null;
+      const international = Boolean(payload.international || cardInfo.international);
+
       // Check for duplicate payment arrived on already PAID order (two tabs / duplicate payment)
       const isAlreadyPaid = targetOrder.paymentStatus === "PAID";
       const isDifferentPayment = Boolean(targetOrder.paymentId && targetOrder.paymentId !== params.paymentId);
+
+      // A capture that arrives after the expiry worker released inventory must
+      // enter the duplicate-payment refund queue instead of reconfirming stockless order.
+      if (targetOrder.paymentStatus === "EXPIRED" || targetOrder.status === "CANCELLED") {
+        await tx.paymentTransaction.create({
+          data: {
+            orderId: targetOrder.id,
+            gateway: "RAZORPAY",
+            gatewayOrderId: params.razorpayOrderId || targetOrder.razorpayOrderId || null,
+            gatewayPaymentId: params.paymentId,
+            gatewaySignature: params.signature || null,
+            method: params.method || "ONLINE",
+            amount: params.amount,
+            currency: "INR",
+            status: "REFUND_FLAGGED",
+            bank,
+            wallet,
+            vpa,
+            cardLast4,
+            cardNetwork,
+            international,
+            rawPayload: {
+              ...(params.rawPayload ? (params.rawPayload as any) : {}),
+              refundReason: "LATE_PAYMENT_AFTER_ORDER_EXPIRY",
+            },
+          },
+        });
+        await tx.order.update({
+          where: { id: targetOrder.id },
+          data: {
+            notes: `${targetOrder.notes || ""} [LATE_PAYMENT_FLAGGED: Payment ${params.paymentId} arrived after order expiry; refund required.]`,
+          },
+        });
+        return { ...targetOrder, items: [], latePaymentFlagged: true };
+      }
 
       if (isAlreadyPaid && isDifferentPayment) {
         console.warn(
@@ -323,6 +377,12 @@ export async function recordPaymentSuccess(params: {
             amount: params.amount,
             currency: "INR",
             status: "REFUND_FLAGGED",
+            bank,
+            wallet,
+            vpa,
+            cardLast4,
+            cardNetwork,
+            international,
             rawPayload: {
               ...(params.rawPayload ? (params.rawPayload as any) : {}),
               refundReason: "DUPLICATE_PAYMENT_ORDER_ALREADY_PAID",
@@ -340,6 +400,17 @@ export async function recordPaymentSuccess(params: {
           include: { items: true },
         });
 
+        await auditPaymentEvent({
+          orderId: targetOrder.id,
+          action: "DUPLICATE_PAYMENT_DETECTED",
+          actor: "SYSTEM",
+          details: {
+            paymentId: params.paymentId,
+            existingPaymentId: targetOrder.paymentId,
+            amount: params.amount,
+          },
+        });
+
         return updatedWithRefund;
       }
 
@@ -355,6 +426,12 @@ export async function recordPaymentSuccess(params: {
           amount: params.amount,
           currency: "INR",
           status: "CAPTURED",
+          bank,
+          wallet,
+          vpa,
+          cardLast4,
+          cardNetwork,
+          international,
           rawPayload: params.rawPayload ? (params.rawPayload as any) : null,
         },
       });
@@ -399,6 +476,16 @@ export async function recordPaymentSuccess(params: {
       return saved;
     });
 
+    if ((updatedOrder as any).latePaymentFlagged) {
+      await auditPaymentEvent({
+        orderId: params.orderId,
+        action: "LATE_PAYMENT_REFUND_FLAGGED",
+        actor: "WEBHOOK",
+        details: { paymentId: params.paymentId, amount: params.amount },
+      });
+      return { success: true, order: updatedOrder, requiresRefund: true };
+    }
+
     // 3. Trigger transactional email asynchronously (never blocks / fails request)
     const customerEmail =
       updatedOrder.guestEmail || (updatedOrder as any).user?.email || (updatedOrder.shippingAddress as any)?.email;
@@ -423,6 +510,18 @@ export async function recordPaymentSuccess(params: {
       totalAmount: Number(updatedOrder.totalAmount),
       paymentId: params.paymentId,
     }).catch((e) => console.warn("Failed to dispatch owner payment alert:", e));
+
+    // Dispatch audit log
+    await auditPaymentEvent({
+      orderId: params.orderId,
+      action: "PAYMENT_CAPTURED",
+      actor: "PAYMENTS:recordPaymentSuccess",
+      details: {
+        paymentId: params.paymentId,
+        amount: params.amount,
+        method: params.method,
+      },
+    });
 
     return { success: true, order: updatedOrder };
   } catch (error: any) {
@@ -485,12 +584,23 @@ export async function recordPaymentFailure(params: {
     if (customerEmail) {
       sendPaymentFailedEmail({
         orderNumber: order.orderNumber,
+        orderId: order.id,
         customerName,
         customerEmail,
         totalAmount: Number(order.totalAmount),
         reason: params.reason,
       }).catch((e) => console.warn("Failed to dispatch payment failed email:", e));
     }
+
+    await auditPaymentEvent({
+      orderId: params.orderId,
+      action: "PAYMENT_FAILED",
+      actor: "PAYMENTS:recordPaymentFailure",
+      details: {
+        paymentId: params.paymentId,
+        reason: params.reason,
+      },
+    });
 
     return { success: true, order: updated };
   } catch (error: any) {

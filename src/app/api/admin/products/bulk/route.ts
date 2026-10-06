@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     if (action === "delete") {
       let count = 0;
-      const adminEmail = auth.user?.email || "admin@starpress.in";
+      const adminEmail = auth.user?.email || "admin@example.com";
       for (const id of ids) {
         const res = await deleteAdminProduct(id, adminEmail);
         if (res.success) count++;

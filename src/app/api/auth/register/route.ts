@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { Role } from "@prisma/client";
 import { registerSchema } from "@/lib/validation/auth";
-import { rateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
+import { rateLimitDistributed, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 import { logAuthEvent } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get("user-agent") || "unknown";
 
   // 1. Rate Limiting Defense: Max 5 registration attempts per 15 minutes per IP
-  const rateLimitResult = rateLimit(`register:${clientIp}`, 5, 15 * 60);
+  const rateLimitResult = await rateLimitDistributed(`register:${clientIp}`, 5, 15 * 60);
   if (!rateLimitResult.success) {
     return rateLimitExceededResponse(
       rateLimitResult,

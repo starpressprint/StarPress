@@ -9,11 +9,12 @@ import { env } from "@/lib/env";
 const STORE_NAME = "Star Press Print Studio";
 const APP_URL = env.NEXT_PUBLIC_APP_URL || "https://starpress.in";
 const RESEND_API_URL = "https://api.resend.com/emails";
-const SENDER_EMAIL = process.env.NOTIFICATION_EMAIL || "orders@starpress.in";
+const SENDER_EMAIL = process.env.NOTIFICATION_EMAIL || "orders@example.com";
 const OWNER_EMAIL =
   process.env.ORDER_NOTIFY_EMAIL ||
   process.env.OWNER_ALERT_EMAIL ||
-  "owner@starpress.in";
+  "owner@example.com";
+const OWNER_ALERT_EMAIL = OWNER_EMAIL;
 
 interface EmailRecipient {
   email: string;
@@ -203,13 +204,16 @@ export async function sendPaymentReceivedEmail(order: {
  */
 export async function sendPaymentFailedEmail(order: {
   orderNumber: string;
+  orderId?: string;
   customerName: string;
   customerEmail: string;
   totalAmount: number;
   reason?: string;
 }): Promise<boolean> {
   const formattedTotal = Number(order.totalAmount).toLocaleString("en-IN");
-  const checkoutUrl = `${APP_URL}/checkout`;
+  const retryUrl = order.orderId
+    ? `${APP_URL}/account/orders/${order.orderId}/pay`
+    : `${APP_URL}/account?tab=orders`;
 
   const body = `
     <span class="badge badge-failed">Payment Incomplete</span>
@@ -217,7 +221,7 @@ export async function sendPaymentFailedEmail(order: {
     <p class="p">Hi ${order.customerName},</p>
     <p class="p">We noticed your recent payment attempt for print order <strong>#${order.orderNumber}</strong> was not completed.${order.reason ? ` Reason: <em>${order.reason}</em>.` : ""}</p>
     
-    <p class="p">Don't worry — your print configurations and cart items are preserved. You can retry with UPI, Credit/Debit card, or choose Pay After Proof.</p>
+    <p class="p">Don't worry — your print configurations and order details are safely preserved. You can complete your payment via UPI, Debit/Credit Card, or Netbanking using the link below.</p>
 
     <div class="box">
       <div class="row"><span class="lbl">Order Number:</span><span class="val" style="font-family: monospace;">${order.orderNumber}</span></div>
@@ -226,7 +230,7 @@ export async function sendPaymentFailedEmail(order: {
     </div>
 
     <div style="text-align: center; margin: 28px 0;">
-      <a href="${checkoutUrl}" class="btn">Retry Payment Securely →</a>
+      <a href="${retryUrl}" class="btn">Complete Your Payment Securely →</a>
     </div>
   `;
 
@@ -275,5 +279,153 @@ export async function notifyOwnerOrderPaid(order: {
     to: OWNER_EMAIL,
     subject: `💰 [PAID ₹${formattedTotal}] New Order #${order.orderNumber} - ${order.customerName}`,
     html: wrapHtmlEmail(`New PAID Order #${order.orderNumber}`, body),
+  });
+}
+
+/**
+ * 5. Customer Refund Notification Email
+ */
+export async function sendRefundNotificationEmail(params: {
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  refundAmount: number;
+  refundId: string;
+  status?: string;
+  reason?: string;
+}): Promise<boolean> {
+  const formattedAmount = Number(params.refundAmount).toLocaleString("en-IN");
+  const isProcessed = params.status === "processed";
+
+  const body = `
+    <span class="badge ${isProcessed ? "badge-paid" : "badge-failed"}" style="${isProcessed ? "background: rgba(16, 185, 129, 0.1); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3);" : "background: rgba(245, 158, 11, 0.1); color: #F59E0B; border: 1px solid rgba(245, 158, 11, 0.3);"}">
+      ${isProcessed ? "Refund Processed" : "Refund Initiated"}
+    </span>
+    <h1 class="h1">₹${formattedAmount} Refund ${isProcessed ? "Processed" : "Initiated"}</h1>
+    <p class="p">Hi ${params.customerName},</p>
+    <p class="p">A refund of <strong>₹${formattedAmount}</strong> has been ${isProcessed ? "successfully processed to your original payment method" : "initiated on your order"}.${params.reason ? ` Reason: <em>${params.reason}</em>.` : ""}</p>
+    
+    <div class="box">
+      <div class="row"><span class="lbl">Order Number:</span><span class="val" style="font-family: monospace;">${params.orderNumber}</span></div>
+      <div class="row"><span class="lbl">Refund Amount:</span><span class="val">₹${formattedAmount}</span></div>
+      <div class="row"><span class="lbl">Refund ID:</span><span class="val" style="font-family: monospace;">${params.refundId}</span></div>
+      <div class="row"><span class="lbl">Processing Time:</span><span class="val">5-7 business days</span></div>
+    </div>
+
+    <p class="p" style="font-size: 12px; color: #94A3B8; margin-top: 20px;">
+      Depending on your issuing bank or UPI provider, the credited funds will reflect on your statement within 5 to 7 business days.
+    </p>
+  `;
+
+  return sendViaResend({
+    to: params.customerEmail,
+    subject: `Refund Notice: ₹${formattedAmount} for Order #${params.orderNumber} [Star Press]`,
+    html: wrapHtmlEmail(`Refund Notice #${params.orderNumber}`, body),
+  });
+}
+
+/**
+ * 6. Owner Alert: Payment Dispute / Chargeback
+ */
+export async function alertOwnerPaymentDispute(params: {
+  orderNumber: string;
+  paymentId: string;
+  disputeReason: string;
+  amount: number;
+}): Promise<boolean> {
+  const formattedAmount = Number(params.amount).toLocaleString("en-IN");
+  const adminUrl = `${APP_URL}/admin/orders`;
+
+  const body = `
+    <span class="badge" style="background: rgba(239, 68, 68, 0.1); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+      🚨 URGENT: Payment Disputed
+    </span>
+    <h1 class="h1">Payment Dispute Raised: ₹${formattedAmount}</h1>
+    <p class="p">A customer bank dispute / chargeback has been filed against captured payment <strong>${params.paymentId}</strong> for Order <strong>#${params.orderNumber}</strong>.</p>
+    
+    <div class="box">
+      <div class="row"><span class="lbl">Order Number:</span><span class="val font-mono">${params.orderNumber}</span></div>
+      <div class="row"><span class="lbl">Dispute Reason:</span><span class="val" style="color: #EF4444;">${params.disputeReason}</span></div>
+      <div class="row"><span class="lbl">Disputed Amount:</span><span class="val">₹${formattedAmount}</span></div>
+      <div class="row"><span class="lbl">Razorpay Payment ID:</span><span class="val font-mono">${params.paymentId}</span></div>
+    </div>
+
+    <div style="text-align: center; margin: 28px 0;">
+      <a href="https://dashboard.razorpay.com/#/app/disputes" class="btn" style="background: #EF4444; color: white;">Open Razorpay Dispute Center →</a>
+    </div>
+  `;
+
+  return sendViaResend({
+    to: OWNER_ALERT_EMAIL,
+    subject: `🚨 [DISPUTE RAISED ₹${formattedAmount}] Action Required: Order #${params.orderNumber}`,
+    html: wrapHtmlEmail(`Payment Dispute #${params.orderNumber}`, body),
+  });
+}
+
+/**
+ * 7. Owner Alert: Payment Amount Mismatch Detected
+ */
+export async function alertOwnerAmountMismatch(params: {
+  orderNumber: string;
+  expectedAmount: number;
+  capturedAmount: number;
+}): Promise<boolean> {
+  const body = `
+    <span class="badge" style="background: rgba(239, 68, 68, 0.1); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3);">
+      ⚠️ Tampering / Mismatch Alert
+    </span>
+    <h1 class="h1">Payment Amount Discrepancy</h1>
+    <p class="p">A transaction amount mismatch was caught by the payment verification system for Order <strong>#${params.orderNumber}</strong>.</p>
+    
+    <div class="box">
+      <div class="row"><span class="lbl">Order Number:</span><span class="val">${params.orderNumber}</span></div>
+      <div class="row"><span class="lbl">Expected DB Amount:</span><span class="val font-mono">₹${params.expectedAmount}</span></div>
+      <div class="row"><span class="lbl">Gateway Amount:</span><span class="val font-mono" style="color: #EF4444;">₹${params.capturedAmount}</span></div>
+    </div>
+  `;
+
+  return sendViaResend({
+    to: OWNER_ALERT_EMAIL,
+    subject: `⚠️ [AMOUNT MISMATCH] Order #${params.orderNumber}`,
+    html: wrapHtmlEmail(`Amount Mismatch #${params.orderNumber}`, body),
+  });
+}
+
+/**
+ * 8. Owner Alert: Gateway ↔ DB Reconciliation Drift
+ */
+export async function alertOwnerReconciliationDrift(params: {
+  driftedOrders: Array<{ orderNumber: string; dbStatus: string; gatewayStatus: string }>;
+}): Promise<boolean> {
+  const rows = params.driftedOrders
+    .map(
+      (o) =>
+        `<tr><td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-family: monospace;">${o.orderNumber}</td><td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">${o.dbStatus}</td><td style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-weight: bold; color: #10B981;">${o.gatewayStatus}</td></tr>`
+    )
+    .join("");
+
+  const body = `
+    <span class="badge" style="background: rgba(59, 130, 246, 0.1); color: #3B82F6; border: 1px solid rgba(59, 130, 246, 0.3);">
+      Reconciliation Notice
+    </span>
+    <h1 class="h1">Payment Drift Reconciled (${params.driftedOrders.length} Orders)</h1>
+    <p class="p">The automated reconciliation job detected that the following orders were paid on Razorpay but had not received client verification or webhook signals. They have been synchronized to PAID.</p>
+    
+    <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px;">
+      <thead>
+        <tr style="text-align: left; color: #94A3B8;">
+          <th style="padding: 8px;">Order #</th>
+          <th style="padding: 8px;">Previous Status</th>
+          <th style="padding: 8px;">Synchronized Status</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+
+  return sendViaResend({
+    to: OWNER_ALERT_EMAIL,
+    subject: `🔄 [RECONCILIATION] ${params.driftedOrders.length} Payment Drifts Resolved`,
+    html: wrapHtmlEmail("Payment Reconciliation Report", body),
   });
 }
