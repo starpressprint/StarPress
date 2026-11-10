@@ -30,12 +30,21 @@ html.light {
 @layer base {
   html {
     scroll-behavior: smooth;
+    overflow-x: hidden;
+    max-width: 100%;
   }
 
   body {
     background-color: rgb(var(--color-bg-base));
     color: rgb(var(--color-text-primary));
     overflow-x: hidden;
+    max-width: 100%;
+    position: relative;
+    width: 100%;
+  }
+
+  *, ::before, ::after {
+    box-sizing: border-box;
   }
 
   /* Custom theme scrollbar */

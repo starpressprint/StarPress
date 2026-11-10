@@ -45,7 +45,7 @@ export default function Footer() {
 
   return (
     <footer className="w-full border-t border-border-subtle bg-bg-base pt-16 pb-8">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         {/* Top 4-Column Area */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 lg:gap-8">
           {/* 1. Brand Column */}
@@ -110,7 +110,7 @@ export default function Footer() {
         </div>
 
         {/* Bottom Bar */}
-        <div className="border-t border-border-subtle pt-6 mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-muted">
+        <div className="border-t border-border-subtle pt-6 mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-muted text-center sm:text-left">
           <p>© 2025 Star Press. All rights reserved.</p>
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4">
             <Link href="/privacy" className="hover:text-text-secondary transition-colors">

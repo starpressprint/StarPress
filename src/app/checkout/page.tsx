@@ -303,14 +303,19 @@ export default function CheckoutPage() {
 
   // Exact pricing derived from server quote or calculated fallback
   const standardDeliveryFee = 40;
-  const expressDeliveryFee = 80;
-  const deliveryCharge = deliveryOption === "express" ? expressDeliveryFee : standardDeliveryFee;
+  const expressDeliveryFee = standardDeliveryFee + 249;
+  const isEligibleForFreeShipping = subtotal >= 999;
+  const fallbackDelivery = deliveryOption === "express"
+    ? (isEligibleForFreeShipping ? 249 : expressDeliveryFee)
+    : (isEligibleForFreeShipping ? 0 : standardDeliveryFee);
+  const deliveryCharge = serverQuote ? serverQuote.shipping : fallbackDelivery;
 
-  const gstAmount = serverQuote ? serverQuote.gst : Math.round(subtotal * 0.18);
+  const displaySubtotal = serverQuote ? serverQuote.subtotal : subtotal;
+  const gstAmount = serverQuote ? serverQuote.gst : Math.round(displaySubtotal * 0.18);
   const discountAmount = serverQuote ? serverQuote.discount : 0;
   const grandTotal = serverQuote
     ? serverQuote.grandTotal
-    : Math.max(0, subtotal - discountAmount) + deliveryCharge + gstAmount;
+    : Math.max(0, displaySubtotal - discountAmount) + deliveryCharge + gstAmount;
 
   // Select Saved Address
   const handleSelectSavedAddress = (addr: SavedAddress) => {
@@ -908,7 +913,7 @@ export default function CheckoutPage() {
                 {currentStep === 2 ? (
                   <>
                     {/* 1. Delivery Details Card */}
-                    <div className="bg-bg-surface rounded-3xl p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-6">
+                    <div className="bg-bg-surface rounded-3xl p-4 xs:p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-6">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-brand-indigo/10 text-brand-indigo flex items-center justify-center shrink-0">
@@ -1053,7 +1058,7 @@ export default function CheckoutPage() {
                     </div>
 
                     {/* 2. Delivery Options Card */}
-                    <div className="bg-bg-surface rounded-3xl p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-5">
+                    <div className="bg-bg-surface rounded-3xl p-4 xs:p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-5">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-brand-indigo/10 text-brand-indigo flex items-center justify-center shrink-0">
                           <Truck size={19} />
@@ -1100,7 +1105,9 @@ export default function CheckoutPage() {
                               <p className="text-xs text-text-secondary mt-0.5">3–7 business days</p>
                             </div>
                           </div>
-                          <span className="text-sm font-bold text-text-primary">₹{standardDeliveryFee}</span>
+                          <span className="text-sm font-bold text-text-primary">
+                            {displaySubtotal >= 999 ? "FREE" : `₹${standardDeliveryFee}`}
+                          </span>
                         </div>
 
                         {/* Express Delivery */}
@@ -1136,13 +1143,15 @@ export default function CheckoutPage() {
                               <p className="text-xs text-text-secondary mt-0.5">1–3 business days</p>
                             </div>
                           </div>
-                          <span className="text-sm font-bold text-text-primary">₹{expressDeliveryFee}</span>
+                          <span className="text-sm font-bold text-text-primary">
+                            {displaySubtotal >= 999 ? "₹249" : `₹${expressDeliveryFee}`}
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     {/* 3. Order Notes Card */}
-                    <div className="bg-bg-surface rounded-3xl p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-4">
+                    <div className="bg-bg-surface rounded-3xl p-4 xs:p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-brand-indigo/10 text-brand-indigo flex items-center justify-center shrink-0">
                           <FileText size={18} />
@@ -1165,7 +1174,7 @@ export default function CheckoutPage() {
                   </>
                 ) : (
                   /* Step 3: Payment Method Selection */
-                  <div className="bg-bg-surface rounded-3xl p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-6">
+                  <div className="bg-bg-surface rounded-3xl p-4 xs:p-6 sm:p-8 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-6">
                     <div className="flex items-center justify-between pb-4 border-b border-border-subtle">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-brand-indigo/10 text-brand-indigo flex items-center justify-center shrink-0">
@@ -1324,7 +1333,7 @@ export default function CheckoutPage() {
               {/* RIGHT COLUMN: Order Summary & Trust Badges */}
               <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-24">
                 {/* 1. Order Summary Card */}
-                <div className="bg-bg-surface rounded-3xl p-6 sm:p-7 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-5">
+                <div className="bg-bg-surface rounded-3xl p-4 xs:p-6 sm:p-7 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.04)] border border-border-subtle space-y-5">
                   <div className="flex items-center justify-between pb-3 border-b border-border-subtle">
                     <div className="flex items-center gap-2.5">
                       <div className="w-9 h-9 rounded-full bg-brand-indigo/10 text-brand-indigo flex items-center justify-center shrink-0">
@@ -1349,8 +1358,8 @@ export default function CheckoutPage() {
 
                       return (
                         <div key={item.id || idx} className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-bg-surface-alt border border-border-subtle shrink-0">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden bg-bg-surface-alt border border-border-subtle shrink-0">
                               <Image
                                 src={item.imageSrc || "/images/placeholder.png"}
                                 alt={item.name || "Custom Print"}
@@ -1358,8 +1367,8 @@ export default function CheckoutPage() {
                                 className="object-cover"
                               />
                             </div>
-                            <div className="space-y-0.5">
-                              <p className="text-xs sm:text-sm font-bold text-text-primary leading-tight">
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <p className="text-xs sm:text-sm font-bold text-text-primary leading-tight truncate">
                                 {item.name || "Custom Print"}
                               </p>
                               {customText && (
@@ -1448,14 +1457,14 @@ export default function CheckoutPage() {
                     <div className="flex items-center justify-between text-text-secondary">
                       <span>Subtotal</span>
                       <span className="font-semibold text-text-primary">
-                        ₹{subtotal.toLocaleString("en-IN")}
+                        ₹{displaySubtotal.toLocaleString("en-IN")}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-text-secondary">
                       <span>Delivery Charge</span>
                       <span className="font-semibold text-text-primary">
-                        ₹{deliveryCharge.toLocaleString("en-IN")}
+                        {deliveryCharge === 0 ? "FREE" : `₹${deliveryCharge.toLocaleString("en-IN")}`}
                       </span>
                     </div>
 

@@ -106,16 +106,16 @@ export default function ContactPage() {
     <div className="flex min-h-screen flex-col bg-bg-base text-text-primary selection:bg-brand-yellow selection:text-black">
       <Header />
 
-      <main className="flex-1 max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-10 md:py-14">
+      <main className="flex-1 max-w-[1280px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-8 sm:py-10 md:py-14">
         {/* Page Hero */}
-        <div className="relative rounded-[28px] border border-border-subtle bg-bg-surface p-8 sm:p-14 mb-12 overflow-hidden shadow-xl">
+        <div className="relative rounded-[28px] border border-border-subtle bg-bg-surface p-5 xs:p-7 sm:p-12 mb-8 sm:mb-12 overflow-hidden shadow-xl">
           <div className="relative z-10 max-w-2xl space-y-4">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border-subtle bg-bg-surface-alt text-text-secondary text-xs font-semibold uppercase tracking-wider">
               <MessageSquare size={13} className="text-brand-yellow" />
               <span>We Are Here To Assist</span>
             </div>
 
-            <h1 className="font-display font-black text-3xl sm:text-5xl uppercase text-text-primary tracking-tight leading-[1.1]">
+            <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-5xl uppercase text-text-primary tracking-tight leading-[1.1] break-words">
               Contact Star Press
             </h1>
 

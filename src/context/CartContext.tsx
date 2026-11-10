@@ -138,10 +138,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         return updated;
       }
 
+      const resolvedSlug =
+        product.productSlug ||
+        (product.href?.includes("/shop/") ? product.href.split("/shop/")[1].split("?")[0] : undefined);
+
       const newItem: CartItem = {
         id: product.id,
-        productId: product.productId,
-        productSlug: product.productSlug,
+        productId: product.productId || product.id,
+        productSlug: resolvedSlug,
         name: product.name,
         price: product.price,
         imageSrc: product.imageSrc,

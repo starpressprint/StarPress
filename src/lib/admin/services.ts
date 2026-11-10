@@ -22,12 +22,25 @@ import type {
 } from './types';
 
 
-// Helper to safely fetch from window origin
+// Helper to safely fetch from window origin with Supabase Bearer token attached
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  let authHeader: Record<string, string> = {};
+
+  if (typeof window !== 'undefined') {
+    try {
+      const { supabase } = await import('@/lib/supabase/client');
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        authHeader = { Authorization: `Bearer ${data.session.access_token}` };
+      }
+    } catch {}
+  }
+
   const res = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...authHeader,
       ...options?.headers,
     },
     cache: 'no-store',
@@ -339,7 +352,7 @@ export const orderService = {
       };
     } catch (err) {
       console.error('[orderService.getOrders] error:', err);
-      return { data: [], total: 0, page: 1, pageSize: 10, totalPages: 1 };
+      throw err;
     }
   },
 

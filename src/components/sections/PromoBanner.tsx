@@ -6,12 +6,12 @@ import Button from "@/components/ui/Button";
 export default function PromoBanner() {
   return (
     <section className="py-10 md:py-16">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         <div className="relative rounded-[28px] border border-border-subtle bg-bg-surface overflow-hidden shadow-2xl">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center p-8 sm:p-12 lg:p-14 relative z-10">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center p-5 xs:p-7 sm:p-12 lg:p-14 relative z-10">
             {/* Left Text Block */}
             <div className="lg:col-span-6 space-y-6 text-center lg:text-left">
-              <h2 className="font-display font-black text-3xl sm:text-4xl lg:text-5xl uppercase leading-[1.1] tracking-tight">
+              <h2 className="font-display font-black text-2xl xs:text-3xl sm:text-4xl lg:text-5xl uppercase leading-[1.1] tracking-tight break-words">
                 <span className="text-text-primary block">CUSTOM PRINTING</span>
                 <span className="text-text-primary">FOR A </span>
                 <span className="text-brand-yellow">BOLDER </span>

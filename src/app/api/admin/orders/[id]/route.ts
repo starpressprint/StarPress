@@ -9,6 +9,14 @@ import { verifyAdminAccess } from "@/lib/admin/auth-check";
 import { db } from "@/lib/db";
 import { OrderStatus } from "@prisma/client";
 
+function safeIsoDate(val: any): string {
+  if (!val || val === "undefined" || val === "null") {
+    return new Date().toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 interface RouteParams {
   params: {
     id: string;
@@ -57,7 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       customerName: o.guestName || (anyOrder.user ? anyOrder.user.name : "Customer"),
       customerEmail: o.guestEmail || (anyOrder.user ? anyOrder.user.email : ""),
       customerPhone: o.guestPhone || (anyOrder.user ? anyOrder.user.phone : ""),
-      date: anyOrder.createdAt ? new Date(anyOrder.createdAt).toISOString() : new Date().toISOString(),
+      date: safeIsoDate(anyOrder.createdAt),
       items: items.map((it: any) => ({
         id: it.id,
         productId: it.productId,

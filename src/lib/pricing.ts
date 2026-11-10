@@ -81,7 +81,7 @@ export function calculateProductPrice(
     materialOptions[0] || { extraPricePerUnit: 0 };
   const materialExtra = selectedMaterial.extraPricePerUnit || 0;
 
-  // 3. Determine base unit rate
+  // 3. Determine base unit rate and pricing model
   // Default tier quantity for starter pack
   const defaultTier =
     quantityTiers.find((t) => t.default) || quantityTiers[0] || { quantity: 1 };
@@ -89,18 +89,47 @@ export function calculateProductPrice(
     pricingModel === "batch" ||
     (pricingModel !== "unit" && defaultTier.quantity >= 10);
   const effectiveBaseQty = baseQuantity || (isBatch ? defaultTier.quantity : 1);
-  const baseUnitRate = isBatch ? basePrice / effectiveBaseQty : basePrice;
 
-  // 4. Find closest qualifying quantity discount tier
-  const sortedTiers = [...quantityTiers].sort((a, b) => b.quantity - a.quantity);
-  const matchedTier = sortedTiers.find((tier) => quantity >= tier.quantity);
-  const discountPercent = matchedTier ? matchedTier.discountPercent : 0;
+  // 4. Quantity evaluation:
+  // If batch product and quantity is below effectiveBaseQty (e.g. 1, 2, 3 packs),
+  // then quantity represents the number of starter packs/batches ordered.
+  const isPackCount = isBatch && quantity < effectiveBaseQty;
 
-  // 5. Calculate unit price
-  const rawUnitPrice = baseUnitRate * sizeMultiplier + materialExtra;
-  const discountedUnitPrice = rawUnitPrice * (1 - discountPercent / 100);
-  const roundedUnitPrice =
-    Math.round(discountedUnitPrice * 100) / 100;
+  let rawUnitPrice: number;
+  let discountedUnitPrice: number;
+  let roundedUnitPrice: number;
+  let discountPercent = 0;
+  let undiscountedSubtotal: number;
+  let finalSubtotal: number;
+
+  if (isPackCount) {
+    // Each pack consists of effectiveBaseQty units
+    const packBasePrice = basePrice * sizeMultiplier + materialExtra * effectiveBaseQty;
+    // Check if bulk pack discounts apply based on equivalent pieces
+    const equivalentUnits = quantity * effectiveBaseQty;
+    const sortedTiers = [...quantityTiers].sort((a, b) => b.quantity - a.quantity);
+    const matchedTier = sortedTiers.find((tier) => equivalentUnits >= tier.quantity);
+    discountPercent = matchedTier ? matchedTier.discountPercent : 0;
+
+    rawUnitPrice = packBasePrice;
+    discountedUnitPrice = rawUnitPrice * (1 - discountPercent / 100);
+    roundedUnitPrice = Math.round(discountedUnitPrice * 100) / 100;
+    undiscountedSubtotal = Math.round(rawUnitPrice * quantity);
+    finalSubtotal = Math.round(discountedUnitPrice * quantity);
+  } else {
+    // Individual piece / standard unit calculation
+    const baseUnitRate = isBatch ? basePrice / effectiveBaseQty : basePrice;
+    rawUnitPrice = baseUnitRate * sizeMultiplier + materialExtra;
+
+    const sortedTiers = [...quantityTiers].sort((a, b) => b.quantity - a.quantity);
+    const matchedTier = sortedTiers.find((tier) => quantity >= tier.quantity);
+    discountPercent = matchedTier ? matchedTier.discountPercent : 0;
+
+    discountedUnitPrice = rawUnitPrice * (1 - discountPercent / 100);
+    roundedUnitPrice = Math.round(discountedUnitPrice * 100) / 100;
+    undiscountedSubtotal = Math.round(rawUnitPrice * quantity);
+    finalSubtotal = Math.round(discountedUnitPrice * quantity);
+  }
 
   // 6. Customization fee for engraved/personalized text length
   let customizationFee = 0;
@@ -112,8 +141,6 @@ export function calculateProductPrice(
   }
 
   // 7. Subtotal & total
-  const undiscountedSubtotal = Math.round(rawUnitPrice * quantity);
-  const finalSubtotal = Math.round(discountedUnitPrice * quantity);
   const discountAmount = Math.max(0, undiscountedSubtotal - finalSubtotal);
   const totalPrice = finalSubtotal + customizationFee;
 

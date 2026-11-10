@@ -63,7 +63,7 @@ export default async function Testimonials() {
 
   return (
     <section className="py-16 md:py-20">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 md:mb-10 gap-4">
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-xs font-semibold mb-3">
@@ -90,7 +90,7 @@ export default async function Testimonials() {
             return (
               <div
                 key={item.id}
-                className="flex flex-col justify-between bg-bg-surface rounded-2xl border border-border-subtle p-6 transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:shadow-xl hover:shadow-black/40"
+                className="flex flex-col justify-between bg-bg-surface rounded-2xl border border-border-subtle p-5 sm:p-6 transition-all duration-200 hover:-translate-y-1 hover:border-white/20 hover:shadow-xl hover:shadow-black/40"
               >
                 <div>
                   <div className="flex items-center gap-3.5 mb-4">

@@ -29,7 +29,7 @@ import { useCart, CartItem } from "@/context/CartContext";
 import { useAuthSession } from "@/hooks/useAuthSession";
 
 const FREE_SHIPPING_THRESHOLD = 999;
-const STANDARD_SHIPPING_FEE = 99;
+const STANDARD_SHIPPING_FEE = 40;
 
 export default function CartPage() {
   const {
@@ -144,7 +144,7 @@ export default function CartPage() {
     <div className="flex min-h-screen flex-col bg-bg-base text-text-primary selection:bg-brand-yellow selection:text-black">
       <Header />
 
-      <main className="flex-1 max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-10 md:py-14">
+      <main className="flex-1 max-w-[1280px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-8 sm:py-10 md:py-14">
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-border-subtle">
           <div>
@@ -152,7 +152,7 @@ export default function CartPage() {
               <ShoppingBag size={13} className="text-brand-yellow" />
               <span>Review Your Custom Print Order</span>
             </div>
-            <h1 className="font-display font-black text-3xl sm:text-4xl text-text-primary uppercase tracking-tight">
+            <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-4xl text-text-primary uppercase tracking-tight break-words">
               Shopping Cart ({items.reduce((acc, it) => acc + it.quantity, 0)} units)
             </h1>
           </div>
@@ -266,7 +266,7 @@ export default function CartPage() {
                   return (
                     <div
                       key={item.id}
-                      className="p-5 sm:p-6 space-y-4 transition-colors hover:bg-white/[0.01]"
+                      className="p-4 xs:p-5 sm:p-6 space-y-4 transition-colors hover:bg-white/[0.01]"
                     >
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
                         {/* Product Thumbnail & Details */}
@@ -359,29 +359,29 @@ export default function CartPage() {
                         </div>
 
                         {/* Quantity Stepper & Subtotal */}
-                        <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-border-subtle">
+                        <div className="flex items-center justify-between sm:justify-end gap-3 xs:gap-4 sm:gap-6 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-border-subtle">
                           {/* Quantity Counter */}
                           {(() => {
                             const maxStock = item.stockQuantity !== undefined ? item.stockQuantity : 5000;
                             const isAtMax = item.quantity >= maxStock;
                             return (
-                              <div className="flex items-center border border-border-subtle rounded-xl bg-bg-surface-alt">
+                              <div className="flex items-center border border-border-subtle rounded-xl bg-bg-surface-alt shrink-0">
                                 <button
                                   type="button"
                                   onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                                  className="w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 rounded-l-xl transition-colors active:scale-90"
+                                  className="w-9 h-9 sm:w-9 sm:h-9 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 rounded-l-xl transition-colors active:scale-90"
                                   aria-label="Decrease quantity"
                                 >
-                                  <Minus size={15} />
+                                  <Minus size={14} />
                                 </button>
-                                <span className="w-12 text-center font-mono font-bold text-sm text-text-primary select-none">
+                                <span className="w-10 sm:w-12 text-center font-mono font-bold text-xs sm:text-sm text-text-primary select-none">
                                   {item.quantity}
                                 </span>
                                 <button
                                   type="button"
                                   disabled={isAtMax}
                                   onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                  className={`w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center text-text-secondary rounded-r-xl transition-colors ${
+                                  className={`w-9 h-9 sm:w-9 sm:h-9 flex items-center justify-center text-text-secondary rounded-r-xl transition-colors ${
                                     isAtMax
                                       ? "opacity-30 cursor-not-allowed"
                                       : "hover:text-text-primary hover:bg-black/5 dark:hover:bg-white/5 active:scale-90"
@@ -389,25 +389,25 @@ export default function CartPage() {
                                   aria-label="Increase quantity"
                                   title={isAtMax ? `Max available stock reached (${maxStock})` : "Increase quantity"}
                                 >
-                                  <Plus size={15} />
+                                  <Plus size={14} />
                                 </button>
                               </div>
                             );
                           })()}
 
                           {/* Line Subtotal */}
-                          <div className="text-right min-w-[90px]">
-                            <div className="font-mono font-bold text-base sm:text-lg text-brand-yellow">
+                          <div className="text-right min-w-[70px] sm:min-w-[90px]">
+                            <div className="font-mono font-bold text-sm sm:text-lg text-brand-yellow">
                               ₹{itemTotal.toLocaleString("en-IN")}
                             </div>
-                            <span className="text-[11px] text-text-muted">Subtotal</span>
+                            <span className="text-[10px] sm:text-[11px] text-text-muted">Subtotal</span>
                           </div>
 
                           {/* Remove Button */}
                           <button
                             type="button"
                             onClick={() => removeItem(item.id)}
-                            className="w-10 h-10 sm:w-9 sm:h-9 flex items-center justify-center text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+                            className="w-9 h-9 sm:w-9 sm:h-9 flex items-center justify-center text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors shrink-0"
                             aria-label={`Remove ${item.name}`}
                             title="Remove item"
                           >

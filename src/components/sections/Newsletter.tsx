@@ -21,8 +21,8 @@ export default function Newsletter() {
 
   return (
     <section className="py-12 md:py-16">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
-        <div className="relative rounded-2xl border border-border-subtle bg-bg-surface p-8 sm:p-10 lg:p-12 overflow-hidden shadow-2xl">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
+        <div className="relative rounded-2xl border border-border-subtle bg-bg-surface p-5 xs:p-7 sm:p-10 lg:p-12 overflow-hidden shadow-2xl">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center relative z-10">
             {/* Left Zone: Form */}
             <div className="lg:col-span-7 space-y-4">
@@ -55,7 +55,7 @@ export default function Newsletter() {
                       setEmail(e.target.value);
                       if (error) setError("");
                     }}
-                    className="flex-1 bg-bg-surface-alt border border-border-subtle rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-yellow focus:ring-1 focus:ring-brand-yellow transition-colors"
+                    className="flex-1 min-w-0 bg-bg-surface-alt border border-border-subtle rounded-lg px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-brand-yellow focus:ring-1 focus:ring-brand-yellow transition-colors"
                   />
                   <Button
                     variant="primary"

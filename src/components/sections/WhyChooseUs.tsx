@@ -5,14 +5,14 @@ import IconBadge from "@/components/ui/IconBadge";
 export default function WhyChooseUs() {
   return (
     <section className="py-16 md:py-20">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         {/* Left-Aligned H2 */}
         <h2 className="font-display font-bold text-2xl sm:text-3xl text-text-primary tracking-tight mb-10">
           Why Choose STAR PRESS?
         </h2>
 
         {/* 4 Benefit Items Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8">
           {WHY_CHOOSE_US.map((item) => (
             <div
               key={item.id}

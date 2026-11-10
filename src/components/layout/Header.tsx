@@ -392,7 +392,7 @@ export default function Header({ cartCount: propCartCount }: HeaderProps) {
 
               {/* Quick Search Popover */}
               {isSearchOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-bg-surface border border-border-subtle rounded-xl p-3 shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-bg-surface border border-border-subtle rounded-xl p-3 shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 duration-150">
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -516,7 +516,7 @@ export default function Header({ cartCount: propCartCount }: HeaderProps) {
                   ref={profileDropdownRef}
                   role="menu"
                   aria-label="User Account Menu"
-                  className="absolute right-0 top-full mt-2 w-80 sm:w-84 bg-bg-surface border border-border-subtle rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 duration-150 overflow-hidden"
+                  className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-w-[calc(100vw-1.5rem)] bg-bg-surface border border-border-subtle rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 duration-150 overflow-hidden"
                 >
                   {status === "authenticated" && session?.user ? (
                     <div>

@@ -177,11 +177,11 @@ export default async function ProductDetailPage({ params }: PageProps) {
 
       <Header />
 
-      <main className="flex-1 max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-8 md:py-12">
+      <main className="flex-1 max-w-[1280px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-6 sm:py-8 md:py-12">
         {/* Breadcrumb Navigation */}
         <nav
           aria-label="Breadcrumb"
-          className="flex items-center gap-2 text-xs text-text-muted mb-8 overflow-x-auto whitespace-nowrap"
+          className="flex items-center gap-2 text-xs text-text-muted mb-6 sm:mb-8 overflow-x-auto whitespace-nowrap no-scrollbar overscroll-x-contain py-1"
         >
           <Link href="/" className="hover:text-text-primary transition-colors">
             Home
@@ -202,7 +202,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         </nav>
 
         {/* 2-Column Product Detail Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 sm:gap-10 lg:gap-14 items-start">
           {/* Left Column: Gallery & Title */}
           <div className="lg:col-span-6 space-y-6 lg:sticky lg:top-28">
             <ProductGallery images={product.images} productName={product.name} />
@@ -215,7 +215,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
                 <StarRating rating={product.rating} reviewCount={product.reviewCount} />
               </div>
 
-              <h1 className="font-display font-black text-3xl sm:text-4xl text-text-primary uppercase tracking-tight leading-[1.1]">
+              <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-4xl text-text-primary uppercase tracking-tight leading-[1.1] break-words">
                 {product.name}
               </h1>
 

@@ -143,14 +143,36 @@ export const persistentStore = {
 
   saveOrder(order: PersistedOrder): PersistedOrder {
     const store = ensureStoreFile();
-    const existingIndex = store.orders.findIndex((o) => o.id === order.id || o.orderNumber === order.orderNumber);
+    const nowIso = new Date().toISOString();
+    const validCreatedAt =
+      order.createdAt &&
+      order.createdAt !== "undefined" &&
+      !isNaN(new Date(order.createdAt).getTime())
+        ? new Date(order.createdAt).toISOString()
+        : nowIso;
+    const validUpdatedAt =
+      order.updatedAt &&
+      order.updatedAt !== "undefined" &&
+      !isNaN(new Date(order.updatedAt).getTime())
+        ? new Date(order.updatedAt).toISOString()
+        : nowIso;
+
+    const sanitizedOrder: PersistedOrder = {
+      ...order,
+      createdAt: validCreatedAt,
+      updatedAt: validUpdatedAt,
+    };
+
+    const existingIndex = store.orders.findIndex(
+      (o) => o.id === sanitizedOrder.id || o.orderNumber === sanitizedOrder.orderNumber
+    );
     if (existingIndex >= 0) {
-      store.orders[existingIndex] = { ...order, updatedAt: new Date().toISOString() };
+      store.orders[existingIndex] = { ...sanitizedOrder, updatedAt: nowIso };
     } else {
-      store.orders.unshift(order);
+      store.orders.unshift(sanitizedOrder);
     }
     saveStore(store);
-    return order;
+    return sanitizedOrder;
   },
 
   deleteOrder(idOrNumber: string): boolean {

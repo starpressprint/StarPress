@@ -247,7 +247,7 @@ export default function Hero({ slides: propSlides }: HeroProps) {
         })}
 
         {/* ── Simple, Clean, Left-Aligned Hero Content Block ── */}
-        <div className="relative z-20 w-full max-w-[1400px] mx-auto px-5 xs:px-6 sm:px-10 lg:px-16 xl:px-20 pt-24 pb-20 sm:pt-28 sm:pb-24 lg:pt-32 lg:pb-28">
+        <div className="relative z-20 w-full max-w-[1400px] mx-auto px-4 xs:px-6 sm:px-10 lg:px-16 xl:px-20 pt-24 pb-20 sm:pt-28 sm:pb-24 lg:pt-32 lg:pb-28">
           <div key={`content-${current}`} className="max-w-[560px] w-full">
             {/* Small Category Label (clean text, no heavy borders or icons) */}
             <div className="hs-content hs-content-d1 text-xs sm:text-[13px] font-semibold tracking-wider uppercase text-brand-yellow mb-2.5 sm:mb-3">
@@ -255,7 +255,7 @@ export default function Hero({ slides: propSlides }: HeroProps) {
             </div>
 
             {/* 1–2 Line Strong Headline (Clear, readable, properly proportioned) */}
-            <h1 className="hs-content hs-content-d2 font-display font-extrabold text-3xl xs:text-4xl sm:text-5xl lg:text-[50px] leading-[1.12] tracking-tight uppercase mb-3.5 sm:mb-4 text-white">
+            <h1 className="hs-content hs-content-d2 font-display font-extrabold text-2xl xs:text-3xl sm:text-5xl lg:text-[50px] leading-[1.12] tracking-tight uppercase mb-3.5 sm:mb-4 text-white break-words">
               {slide.headline.map((line, i) => (
                 <span
                   key={i}
@@ -307,7 +307,7 @@ export default function Hero({ slides: propSlides }: HeroProps) {
         </button>
 
         {/* ── Subtle Bottom Pagination ── */}
-        <div className="absolute bottom-5 sm:bottom-7 inset-x-0 z-30 flex items-center justify-between px-5 xs:px-6 sm:px-10 lg:px-16 xl:px-20 max-w-[1400px] mx-auto pointer-events-none">
+        <div className="absolute bottom-5 sm:bottom-7 inset-x-0 z-30 flex items-center justify-between px-4 xs:px-6 sm:px-10 lg:px-16 xl:px-20 max-w-[1400px] mx-auto pointer-events-none">
           {/* Subtle Dots */}
           <div className="flex items-center gap-2 pointer-events-auto">
             {slides.map((_, i) => (

@@ -34,7 +34,7 @@ export default function ProductGallery({ images, productName }: ProductGalleryPr
 
       {/* Thumbnails Strip */}
       {displayImages.length > 1 && (
-        <div className="flex items-center gap-3 overflow-x-auto pb-1">
+        <div className="flex items-center gap-2.5 sm:gap-3 overflow-x-auto pb-1 no-scrollbar overscroll-x-contain">
           {displayImages.map((img, idx) => {
             const isActive = idx === activeImageIndex;
             return (
@@ -42,7 +42,7 @@ export default function ProductGallery({ images, productName }: ProductGalleryPr
                 key={idx}
                 type="button"
                 onClick={() => setActiveImageIndex(idx)}
-                className={`relative w-20 h-20 rounded-xl overflow-hidden bg-bg-surface-alt border-2 transition-all shrink-0 ${
+                className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-bg-surface-alt border-2 transition-all shrink-0 ${
                   isActive
                     ? "border-brand-yellow shadow-md shadow-brand-yellow/20 scale-105"
                     : "border-border-subtle hover:border-white/40 opacity-70 hover:opacity-100"

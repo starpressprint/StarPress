@@ -71,7 +71,8 @@ export interface QuoteOrderResult {
 }
 
 export const FREE_SHIPPING_THRESHOLD = 999;
-export const STANDARD_SHIPPING_FEE = 99;
+export const STANDARD_SHIPPING_FEE = 40;
+export const EXPRESS_SHIPPING_FEE = 80;
 export const RUSH_SHIPPING_FEE = 249;
 export const GST_RATE = 0.18;
 
@@ -175,7 +176,7 @@ export async function resolveProductConfig(
     productName: dbProduct?.name || catalogItem.name,
     productSlug: catalogItem.slug,
     productId: dbProduct?.id || identifier.productId || catalogItem.id || null,
-    config: catalogItem,
+    config: dbProduct?.basePrice ? { ...catalogItem, basePrice: Number(dbProduct.basePrice) } : catalogItem,
     requiresArtwork,
   };
 }

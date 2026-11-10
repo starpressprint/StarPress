@@ -29,7 +29,7 @@ export default async function BestSellers({ products }: BestSellersProps = {}) {
 
   return (
     <section className="py-14 md:py-18 relative">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 md:mb-10">
           <div className="space-y-1.5">

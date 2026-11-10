@@ -16,7 +16,7 @@ export default function PrivacyPolicyPage() {
     <div className="flex min-h-screen flex-col bg-bg-base text-text-primary selection:bg-brand-yellow selection:text-black">
       <Header />
 
-      <main className="flex-1 max-w-[900px] w-full mx-auto px-6 lg:px-10 py-10 md:py-16">
+      <main className="flex-1 max-w-[900px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-8 sm:py-10 md:py-16">
         {/* Navigation Breadcrumb */}
         <div className="mb-6">
           <Link
@@ -35,7 +35,7 @@ export default function PrivacyPolicyPage() {
             <span>Effective Date: 1 January 2025</span>
           </div>
 
-          <h1 className="font-display font-black text-3xl sm:text-5xl text-text-primary uppercase tracking-tight">
+          <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-5xl text-text-primary uppercase tracking-tight break-words">
             Privacy Policy & Artwork Confidentiality
           </h1>
 

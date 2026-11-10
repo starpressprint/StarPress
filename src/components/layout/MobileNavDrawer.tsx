@@ -91,7 +91,7 @@ export default function MobileNavDrawer({
 
       {/* Drawer Container */}
       <div
-        className="fixed inset-y-0 right-0 w-full max-w-xs bg-bg-surface border-l border-border-subtle p-6 flex flex-col justify-between shadow-2xl transition-transform duration-300 ease-out overflow-y-auto"
+        className="fixed inset-y-0 right-0 w-[min(320px,88vw)] max-w-xs bg-bg-surface border-l border-border-subtle p-4 xs:p-6 flex flex-col justify-between shadow-2xl transition-transform duration-300 ease-out overflow-y-auto overscroll-contain"
         role="dialog"
         aria-modal="true"
         aria-label="Mobile Navigation"

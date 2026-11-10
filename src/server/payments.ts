@@ -17,13 +17,23 @@ export interface CreateRazorpayOrderInput {
 }
 
 export function getRazorpayCredentials(): { keyId: string; keySecret: string } {
-  const keyId =
-    process.env.RAZORPAY_KEY_ID ||
-    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-    "";
-  const keySecret =
-    process.env.RAZORPAY_KEY_SECRET ||
-    "";
+  const serverKeyId = (process.env.RAZORPAY_KEY_ID || "").trim();
+  const publicKeyId = (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "").trim();
+  const keySecret = (process.env.RAZORPAY_KEY_SECRET || "").trim();
+
+  if (serverKeyId && publicKeyId && serverKeyId !== publicKeyId) {
+    console.warn(
+      `[Razorpay Warning] RAZORPAY_KEY_ID (${serverKeyId.slice(0, 8)}...) and NEXT_PUBLIC_RAZORPAY_KEY_ID (${publicKeyId.slice(0, 8)}...) do not match! Prioritizing RAZORPAY_KEY_ID.`
+    );
+  }
+
+  const keyId = serverKeyId || publicKeyId || "";
+
+  // Check prefix consistency between key and secret if secret has recognizable prefix
+  if (keyId.startsWith("rzp_live_") && process.env.NODE_ENV !== "production") {
+    console.warn("[Razorpay Notice] Using LIVE key credentials in non-production environment.");
+  }
+
   return { keyId, keySecret };
 }
 

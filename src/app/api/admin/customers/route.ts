@@ -4,6 +4,14 @@ import { db } from "@/lib/db";
 import { persistentStore } from "@/server/storage";
 import { syncAllSupabaseUsersToDb } from "@/lib/user-sync";
 
+function safeIsoDate(val: any): string {
+  if (!val || val === "undefined" || val === "null") {
+    return new Date().toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
@@ -78,7 +86,7 @@ export async function GET(request: NextRequest) {
         totalSpent: 0,
         lastOrderDate: null,
         status: "active",
-        createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
+        createdAt: safeIsoDate(u.createdAt),
         address: addrStr,
         avatar: null,
         role: u.role,
@@ -100,7 +108,7 @@ export async function GET(request: NextRequest) {
       }
 
       const orderTotal = Number(o.totalAmount || 0);
-      const orderDate = o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString();
+      const orderDate = safeIsoDate(o.createdAt);
 
       if (!entry) {
         entry = {

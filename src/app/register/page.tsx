@@ -649,7 +649,7 @@ function RegisterForm() {
 // ---------------------------------------------------------------------------
 export default function RegisterPage() {
   return (
-    <div className="relative min-h-screen h-screen max-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden selection:bg-brand-yellow selection:text-black">
+    <div className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-y-auto overflow-x-hidden py-8 sm:py-12 selection:bg-brand-yellow selection:text-black">
       {/* Full-bleed Star Press workspace background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
         <Image

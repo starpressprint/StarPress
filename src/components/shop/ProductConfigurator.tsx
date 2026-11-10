@@ -469,9 +469,9 @@ export default function ProductConfigurator({ product }: ProductConfiguratorProp
       </div>
 
       {/* 6. Live Pricing Card & Add to Cart */}
-      <div className="p-6 rounded-2xl border border-border-subtle bg-gradient-to-br from-bg-surface via-bg-surface-alt to-bg-surface shadow-2xl space-y-5">
+      <div className="p-4 xs:p-6 rounded-2xl border border-border-subtle bg-gradient-to-br from-bg-surface via-bg-surface-alt to-bg-surface shadow-2xl space-y-5">
         {/* Unit Price and Total */}
-        <div className="flex items-end justify-between pb-4 border-b border-border-subtle">
+        <div className="flex flex-col xs:flex-row xs:items-end justify-between gap-3 pb-4 border-b border-border-subtle">
           <div>
             <div className="text-xs text-text-muted">Total Estimated Price</div>
             <div className="text-3xl sm:text-4xl font-display font-black text-brand-yellow tracking-tight">
@@ -486,7 +486,7 @@ export default function ProductConfigurator({ product }: ProductConfiguratorProp
           </div>
 
           {pricing.discountAmount > 0 && (
-            <div className="text-right">
+            <div className="text-left xs:text-right">
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-xs">
                 <span>Save {formatINR(pricing.discountAmount)}</span>
               </span>
@@ -568,7 +568,7 @@ export default function ProductConfigurator({ product }: ProductConfiguratorProp
         </div>
 
         {/* Confidence micro-badges */}
-        <div className="pt-2 grid grid-cols-2 gap-2 text-xs text-text-secondary">
+        <div className="pt-2 grid grid-cols-1 xs:grid-cols-2 gap-2 text-xs text-text-secondary">
           <div className="flex items-center gap-1.5">
             <Zap size={14} className="text-slate-400 shrink-0" />
             <span>Ships in {pricing.estimatedTurnaroundDays} business days</span>

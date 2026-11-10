@@ -1,11 +1,11 @@
 // =============================================================================
 // POST /api/create-order
-// Standard Razorpay Order Creation Endpoint
+// Secure Razorpay Order Creation Endpoint (Delegates to server-authoritative orders)
 // =============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import Razorpay from "razorpay";
-import { getRazorpayCredentials } from "@/server/payments";
+import { getRazorpayCredentials, createRazorpayOrder } from "@/server/payments";
+import { isUserAdmin } from "@/lib/admin/is-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -36,39 +36,31 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json().catch(() => ({}));
-    let amount = Number(body.amount);
-    const currency = (body.currency || "INR").toUpperCase();
-    const receipt = body.receipt || `rcpt_${Date.now()}`;
+    const orderId = body.orderId || body.starpressOrderId;
 
-    // Validate minimum amount (100 paise = ₹1)
-    if (!amount || isNaN(amount) || amount < 100) {
+    // Security check: Order ID is required to link payment to server-calculated amount
+    if (!orderId) {
       return NextResponse.json(
-        { error: "Invalid amount. Minimum amount is 100 paise (₹1)." },
+        { error: "orderId is required. Payments must be linked to a valid internal order." },
         { status: 400 }
       );
     }
 
-    // Initialize official Razorpay SDK
-    const razorpay = new Razorpay({
-      key_id: keyId,
-      key_secret: keySecret,
+    const isAdmin = isUserAdmin(user);
+    const razorpayOrder = await createRazorpayOrder({
+      orderId,
+      sessionUserId: user.id,
+      sessionUserEmail: user.email,
+      isAdmin,
     });
-
-    const orderOptions = {
-      amount: Math.round(amount),
-      currency,
-      receipt: String(receipt).slice(0, 40),
-      notes: body.notes || {},
-    };
-
-    const razorpayOrder = await razorpay.orders.create(orderOptions);
 
     return NextResponse.json({
       success: true,
-      order_id: razorpayOrder.id,
+      order_id: razorpayOrder.razorpayOrderId,
       amount: razorpayOrder.amount,
       currency: razorpayOrder.currency,
       key_id: keyId,
+      orderNumber: razorpayOrder.orderNumber,
     });
   } catch (error: any) {
     console.error("[Razorpay API] create-order error:", error);

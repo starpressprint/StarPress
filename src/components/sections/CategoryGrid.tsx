@@ -36,7 +36,7 @@ export default function CategoryGrid({ categories, products }: CategoryGridProps
 
   return (
     <section className="py-16 md:py-24 relative overflow-hidden bg-bg-base">
-      <div className="max-w-[1280px] mx-auto px-6 lg:px-10">
+      <div className="max-w-[1280px] mx-auto px-4 xs:px-6 lg:px-10">
         {/* Section Header */}
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 md:mb-10">
           <div className="space-y-2">
@@ -210,7 +210,7 @@ export default function CategoryGrid({ categories, products }: CategoryGridProps
         {/* 2. MOBILE & TABLET HORIZONTAL SWIPE RAIL (< lg) */}
         <div className="lg:hidden">
           <div
-            className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-4 px-2 no-scrollbar"
+            className="flex gap-3.5 sm:gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-4 -mx-4 xs:-mx-6 px-4 xs:px-6 no-scrollbar overscroll-x-contain"
             style={{ WebkitOverflowScrolling: "touch" }}
           >
             {enrichedCategories.map((cat) => {
@@ -223,7 +223,7 @@ export default function CategoryGrid({ categories, products }: CategoryGridProps
                 <Link
                   key={cat.id}
                   href={cat.href}
-                  className="relative w-[300px] sm:w-[330px] h-[460px] shrink-0 snap-center rounded-[24px] border border-slate-200/80 dark:border-border-subtle hover:border-[#F5BA13] bg-white dark:bg-[#1A1D27] p-3.5 flex flex-col justify-between select-none shadow-md active:scale-[0.98] transition-all"
+                  className="relative w-[min(290px,78vw)] sm:w-[320px] h-[460px] shrink-0 snap-center rounded-[24px] border border-slate-200/80 dark:border-border-subtle hover:border-[#F5BA13] bg-white dark:bg-[#1A1D27] p-3.5 flex flex-col justify-between select-none shadow-md active:scale-[0.98] transition-all"
                 >
                   {/* Top Inset Image */}
                   <div className="relative w-full h-[240px] rounded-[18px] overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">

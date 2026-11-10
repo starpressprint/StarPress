@@ -188,6 +188,78 @@ async function runTests() {
     assert(false, "GST test error", err?.message);
   }
 
+  // -------------------------------------------------------------------------
+  // Test 7: Pack/Batch Starter Quantity Cart Regression (Fix for "always ₹103/₹106")
+  // -------------------------------------------------------------------------
+  console.log("\nScenario 7: Pack/Batch Starter Quantity Cart Regression (Fix for always ₹103/₹106)");
+  try {
+    // 1 pack of stickers: base price is ₹349 (NOT ₹3)
+    const stickerQuote1 = await quoteOrder({
+      items: [{ slug: "custom-stickers", quantity: 1 }],
+      shippingMethod: "standard",
+    });
+    assert(
+      stickerQuote1.subtotal === 349,
+      "1 pack of Waterproof Die-Cut Vinyl Stickers has subtotal ₹349 (not ₹3)",
+      `Expected 349, got ${stickerQuote1.subtotal}`
+    );
+    assert(
+      stickerQuote1.gst === Math.round(349 * 0.18),
+      `18% GST on 1 pack is ₹${Math.round(349 * 0.18)} (not ₹1)`,
+      `Expected ${Math.round(349 * 0.18)}, got ${stickerQuote1.gst}`
+    );
+    assert(
+      stickerQuote1.shipping === 40,
+      "Standard shipping is ₹40",
+      `Expected 40, got ${stickerQuote1.shipping}`
+    );
+    assert(
+      stickerQuote1.grandTotal === 349 + Math.round(349 * 0.18) + 40,
+      `Grand total for 1 pack is ₹${349 + Math.round(349 * 0.18) + 40} (NOT ₹103)`,
+      `Expected ${349 + Math.round(349 * 0.18) + 40}, got ${stickerQuote1.grandTotal}`
+    );
+
+    // 2 packs of stickers: subtotal ₹698 (NOT ₹6)
+    const stickerQuote2 = await quoteOrder({
+      items: [{ slug: "custom-stickers", quantity: 2 }],
+      shippingMethod: "standard",
+    });
+    assert(
+      stickerQuote2.subtotal === 698,
+      "2 packs of Waterproof Die-Cut Vinyl Stickers has subtotal ₹698 (not ₹6)",
+      `Expected 698, got ${stickerQuote2.subtotal}`
+    );
+    assert(
+      stickerQuote2.grandTotal === 698 + Math.round(698 * 0.18) + 40,
+      `Grand total for 2 packs is ₹${698 + Math.round(698 * 0.18) + 40} (NOT ₹106)`,
+      `Expected ${698 + Math.round(698 * 0.18) + 40}, got ${stickerQuote2.grandTotal}`
+    );
+
+    // 1 pack of business cards: base price is ₹299 (NOT ₹3)
+    const cardQuote1 = await quoteOrder({
+      items: [{ slug: "business-cards", quantity: 1 }],
+      shippingMethod: "standard",
+    });
+    assert(
+      cardQuote1.subtotal === 299,
+      "1 pack of Business Cards has subtotal ₹299 (not ₹3)",
+      `Expected 299, got ${cardQuote1.subtotal}`
+    );
+
+    // Free shipping threshold check (>= ₹999)
+    const freeShippingQuote = await quoteOrder({
+      items: [{ slug: "custom-stickers", quantity: 4 }], // 4 packs = ~₹1,187 >= 999
+      shippingMethod: "standard",
+    });
+    assert(
+      freeShippingQuote.shipping === 0,
+      "Standard shipping is FREE for orders >= ₹999",
+      `Expected 0, got ${freeShippingQuote.shipping}`
+    );
+  } catch (err: any) {
+    assert(false, "Pack regression test threw unexpected error", err?.message);
+  }
+
   // Summary
   console.log("\n------------------------------------------------------------");
   console.log(`Results: ${passed} passed, ${failed} failed.`);

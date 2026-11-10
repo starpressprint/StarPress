@@ -394,9 +394,9 @@ function AccountContent() {
     <div className="flex min-h-screen flex-col bg-bg-base text-text-primary selection:bg-brand-yellow selection:text-black">
       <Header />
 
-      <main className="flex-1 max-w-[1280px] w-full mx-auto px-6 lg:px-10 py-10 md:py-14 space-y-8">
+      <main className="flex-1 max-w-[1280px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-8 sm:py-10 md:py-14 space-y-8">
         {/* Profile Banner */}
-        <div className="rounded-3xl border border-border-subtle bg-bg-surface p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-xl relative overflow-hidden">
+        <div className="rounded-3xl border border-border-subtle bg-bg-surface p-4 xs:p-6 sm:p-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-xl relative overflow-hidden">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-brand-yellow/10 border border-brand-yellow/30 flex items-center justify-center text-brand-yellow font-display font-black text-2xl">
               {session.user.name ? session.user.name.charAt(0).toUpperCase() : "U"}
@@ -435,7 +435,7 @@ function AccountContent() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-border-subtle gap-2 sm:gap-6 overflow-x-auto pb-px">
+        <div className="flex border-b border-border-subtle gap-2 sm:gap-6 overflow-x-auto pb-px no-scrollbar overscroll-x-contain">
           <button
             type="button"
             onClick={() => handleTabChange("orders")}

@@ -5,6 +5,14 @@ import { verifyAdminAccess } from "@/lib/admin/auth-check";
 
 export const dynamic = "force-dynamic";
 
+function safeIsoDate(val: any): string {
+  if (!val || val === "undefined" || val === "null") {
+    return new Date().toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await verifyAdminAccess(request);
@@ -77,7 +85,7 @@ export async function GET(request: NextRequest) {
         customerName: o.guestName || (o.user ? o.user.name : "Customer"),
         customerEmail: o.guestEmail || (o.user ? o.user.email : ""),
         customerPhone: o.guestPhone || (o.user ? o.user.phone : ""),
-        date: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
+        date: safeIsoDate(o.createdAt),
         items: items.map((it: any) => ({
           id: it.id,
           productId: it.productId,

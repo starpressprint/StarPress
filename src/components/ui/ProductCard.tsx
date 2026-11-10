@@ -80,7 +80,7 @@ export default function ProductCard({
               ? `Remove ${product.name} from wishlist`
               : `Add ${product.name} to wishlist`
           }
-          className={`absolute top-2.5 right-2.5 w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-200 focus-visible:ring-2 focus-visible:ring-brand-yellow ${
+          className={`absolute top-2.5 right-2.5 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md transition-all duration-200 focus-visible:ring-2 focus-visible:ring-brand-yellow ${
             isWishlisted
               ? "bg-rose-600 text-white scale-110 shadow-md shadow-rose-950/40"
               : "bg-black/50 text-white hover:bg-black/80 hover:text-rose-400"
@@ -101,9 +101,9 @@ export default function ProductCard({
       </div>
 
       {/* 2. Content Info & Inline Bottom Row */}
-      <div className="flex-1 flex flex-col justify-between space-y-2">
+      <div className="flex-1 flex flex-col justify-between space-y-2 min-w-0">
         {/* Title */}
-        <div>
+        <div className="min-w-0">
           <Link href={product.href} className="block">
             <h3 className="font-display font-bold text-sm sm:text-base text-text-primary group-hover:text-brand-yellow transition-colors line-clamp-1">
               {product.name}

@@ -21,7 +21,7 @@ export default function ProductTabs({ product }: ProductTabsProps) {
   return (
     <div className="mt-16 md:mt-24 pt-12 border-t border-border-subtle">
       {/* Tabs Header */}
-      <div className="flex items-center gap-2 border-b border-border-subtle pb-px overflow-x-auto scrollbar-none">
+      <div className="flex items-center gap-2 border-b border-border-subtle pb-px overflow-x-auto scrollbar-none no-scrollbar overscroll-x-contain">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -74,8 +74,8 @@ export default function ProductTabs({ product }: ProductTabsProps) {
 
         {activeTab === "specs" && (
           <div className="max-w-3xl">
-            <div className="rounded-2xl border border-border-subtle overflow-hidden bg-bg-surface">
-              <table className="w-full text-left border-collapse text-xs sm:text-sm">
+            <div className="rounded-2xl border border-border-subtle overflow-hidden bg-bg-surface overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[280px]">
                 <tbody>
                   {Object.entries(product.specifications).map(([key, val], idx) => (
                     <tr

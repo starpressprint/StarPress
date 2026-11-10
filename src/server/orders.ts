@@ -472,42 +472,61 @@ export async function getOrderStats() {
 
   let dbOrders: any[] = [];
   try {
-    const [statusCounts, paymentCounts, dbTotal] = await Promise.all([
+    let [statusCounts, paymentCounts, dbTotal] = await Promise.all([
       db.order.groupBy({
         by: ['status'],
         _count: {
           status: true,
         },
-      }),
+      }).catch(() => null),
       db.order.groupBy({
         by: ['paymentStatus'],
         _count: {
           paymentStatus: true,
         },
-      }),
-      db.order.count(),
+      }).catch(() => null),
+      db.order.count().catch(() => 0),
     ]);
 
-    for (const group of statusCounts) {
-      const normalizedStatus = norm(group.status);
-      const count = group._count.status;
-      if (normalizedStatus === "PENDING") stats.pending += count;
-      else if (normalizedStatus === "PROCESSING") stats.processing += count;
-      else if (normalizedStatus === "SHIPPED") stats.shipped += count;
-      else if (normalizedStatus === "DELIVERED") stats.delivered += count;
-      else if (normalizedStatus === "CANCELLED") stats.cancelled += count;
-      else if (normalizedStatus === "REFUNDED") stats.refunded += count;
+    if (!statusCounts || !paymentCounts) {
+      const allDb = await db.order.findMany({ select: { status: true, paymentStatus: true, id: true, orderNumber: true } }).catch(() => []);
+      dbTotal = allDb.length;
+      for (const row of allDb) {
+        const s = norm(row.status);
+        if (s === "PENDING") stats.pending++;
+        else if (s === "PROCESSING") stats.processing++;
+        else if (s === "SHIPPED") stats.shipped++;
+        else if (s === "DELIVERED") stats.delivered++;
+        else if (s === "CANCELLED") stats.cancelled++;
+        else if (s === "REFUNDED") stats.refunded++;
+
+        const ps = (row.paymentStatus || "").toUpperCase().trim();
+        if (ps === "UNPAID") stats.unpaid++;
+        else if (ps === "PAID") stats.paid++;
+      }
+      dbOrders = allDb;
+    } else {
+      for (const group of statusCounts) {
+        const normalizedStatus = norm(group.status);
+        const count = group._count.status;
+        if (normalizedStatus === "PENDING") stats.pending += count;
+        else if (normalizedStatus === "PROCESSING") stats.processing += count;
+        else if (normalizedStatus === "SHIPPED") stats.shipped += count;
+        else if (normalizedStatus === "DELIVERED") stats.delivered += count;
+        else if (normalizedStatus === "CANCELLED") stats.cancelled += count;
+        else if (normalizedStatus === "REFUNDED") stats.refunded += count;
+      }
+
+      for (const group of paymentCounts) {
+        const ps = (group.paymentStatus || "").toUpperCase().trim();
+        if (ps === "UNPAID") stats.unpaid += group._count.paymentStatus;
+        else if (ps === "PAID") stats.paid += group._count.paymentStatus;
+      }
+
+      dbOrders = await db.order.findMany({ select: { id: true, orderNumber: true } }).catch(() => []);
     }
 
-    for (const group of paymentCounts) {
-      const ps = (group.paymentStatus || "").toUpperCase().trim();
-      if (ps === "UNPAID") stats.unpaid += group._count.paymentStatus;
-      else if (ps === "PAID") stats.paid += group._count.paymentStatus;
-    }
-
-    stats.total = dbTotal;
-
-    dbOrders = await db.order.findMany({ select: { id: true, orderNumber: true } }).catch(() => []);
+    stats.total = Math.max(stats.total, dbTotal);
   } catch (error) {
     console.warn("getOrderStats database error:", error);
   }
@@ -552,12 +571,17 @@ export async function listOrders(options?: {
 
     if (options?.status && options.status !== "all" && options.status !== "ALL") {
       const st = options.status.toUpperCase();
-      if (st === "SHIPPED") {
-        where.status = { in: ["DISPATCHED", "SHIPPED"] };
-      } else if (st === "PROCESSING") {
-        where.status = { in: ["CONFIRMED", "IN_PRODUCTION", "PROCESSING"] };
-      } else {
-        where.status = st;
+      if (st === "SHIPPED" || st === "DISPATCHED") {
+        where.status = { in: ["DISPATCHED"] };
+      } else if (st === "PROCESSING" || st === "CONFIRMED" || st === "IN_PRODUCTION") {
+        where.status = { in: ["CONFIRMED", "IN_PRODUCTION"] };
+      } else if (st === "REFUNDED") {
+        where.OR = [
+          { refundStatus: { in: ["processed", "initiated", "completed"] } },
+          { refundAmount: { gt: 0 } },
+        ];
+      } else if (["PENDING", "CONFIRMED", "IN_PRODUCTION", "DISPATCHED", "DELIVERED", "CANCELLED"].includes(st)) {
+        where.status = st as any;
       }
     }
 
@@ -565,6 +589,10 @@ export async function listOrders(options?: {
       const ps = options.paymentStatus.toUpperCase();
       if (ps === "PAY_AFTER_PROOF") {
         where.paymentMethod = "PAY_AFTER_PROOF";
+      } else if (ps === "PAID") {
+        where.paymentStatus = "PAID";
+      } else if (ps === "UNPAID") {
+        where.paymentStatus = { in: ["UNPAID", "PENDING"] };
       } else {
         where.paymentStatus = ps;
       }
@@ -585,6 +613,8 @@ export async function listOrders(options?: {
       orderBy: { createdAt: "desc" },
       include: {
         items: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        transactions: { select: { id: true, gatewayPaymentId: true, method: true, status: true } },
       },
     });
   } catch (error) {
@@ -603,7 +633,51 @@ export async function listOrders(options?: {
   const combinedMap = new Map<string, any>();
   for (const o of dbOrders) {
     const key = (o.orderNumber || o.id || "").toUpperCase().trim();
-    if (key) combinedMap.set(key, o);
+    if (key) {
+      combinedMap.set(key, o);
+      // Ensure real DB order is also mirrored in persistentStore for offline backup
+      try {
+        persistentStore.saveOrder({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          userId: o.userId,
+          guestEmail: o.guestEmail,
+          guestPhone: o.guestPhone,
+          guestName: o.guestName,
+          status: o.status,
+          subtotal: Number(o.subtotal || 0),
+          gstAmount: o.gstAmount ? Number(o.gstAmount) : null,
+          shippingFee: Number(o.shippingFee || 0),
+          discountAmount: Number(o.discountAmount || 0),
+          totalAmount: Number(o.totalAmount || 0),
+          shippingAddress: o.shippingAddress,
+          billingAddress: o.billingAddress,
+          paymentMethod: o.paymentMethod || "ONLINE",
+          paymentStatus: o.paymentStatus || "UNPAID",
+          paymentId: o.paymentId,
+          trackingNumber: o.trackingNumber,
+          courierPartner: o.courierPartner,
+          notes: o.notes,
+          items: Array.isArray(o.items)
+            ? o.items.map((it: any) => ({
+                id: it.id,
+                productId: it.productId,
+                productName: it.productName,
+                productSlug: it.productSlug,
+                quantity: it.quantity,
+                unitPrice: Number(it.unitPrice || 0),
+                lineTotal: Number(it.lineTotal || 0),
+                specs: it.specs,
+                customText: it.customText,
+                artworkUrl: it.artworkUrl,
+                previewUrl: it.previewUrl,
+              }))
+            : [],
+          createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
+          updatedAt: o.updatedAt ? new Date(o.updatedAt).toISOString() : new Date().toISOString(),
+        });
+      } catch {}
+    }
   }
 
   for (const lo of localOrders) {
@@ -620,8 +694,18 @@ export async function listOrders(options?: {
     const st = options.status.toUpperCase();
     allOrders = allOrders.filter((o) => {
       const ost = (o.status || "").toUpperCase();
-      if (st === "SHIPPED") return ost === "DISPATCHED" || ost === "SHIPPED";
-      if (st === "PROCESSING") return ost === "CONFIRMED" || ost === "IN_PRODUCTION" || ost === "PROCESSING";
+      if (st === "SHIPPED" || st === "DISPATCHED") return ost === "DISPATCHED" || ost === "SHIPPED";
+      if (st === "PROCESSING" || st === "CONFIRMED" || st === "IN_PRODUCTION") {
+        return ost === "CONFIRMED" || ost === "IN_PRODUCTION" || ost === "PROCESSING";
+      }
+      if (st === "REFUNDED") {
+        return (
+          o.refundStatus === "processed" ||
+          o.refundStatus === "completed" ||
+          Number(o.refundAmount || 0) > 0 ||
+          ost === "REFUNDED"
+        );
+      }
       return ost === st;
     });
   }
@@ -632,6 +716,13 @@ export async function listOrders(options?: {
       if (ps === "PAY_AFTER_PROOF") {
         return (o.paymentMethod || "").toUpperCase() === "PAY_AFTER_PROOF";
       }
+      if (ps === "PAID") {
+        return (o.paymentStatus || "").toUpperCase() === "PAID";
+      }
+      if (ps === "UNPAID") {
+        const ops = (o.paymentStatus || "").toUpperCase();
+        return ops === "UNPAID" || ops === "PENDING";
+      }
       return (o.paymentStatus || "").toUpperCase() === ps;
     });
   }
@@ -640,18 +731,18 @@ export async function listOrders(options?: {
     const q = options.search.trim().toLowerCase();
     allOrders = allOrders.filter((o) => {
       const num = (o.orderNumber || "").toLowerCase();
-      const name = (o.guestName || "").toLowerCase();
-      const email = (o.guestEmail || "").toLowerCase();
-      const phone = (o.guestPhone || "").toLowerCase();
+      const name = (o.guestName || o.user?.name || "").toLowerCase();
+      const email = (o.guestEmail || o.user?.email || "").toLowerCase();
+      const phone = (o.guestPhone || o.user?.phone || "").toLowerCase();
       return num.includes(q) || name.includes(q) || email.includes(q) || phone.includes(q);
     });
   }
 
-  // Sort descending by createdAt
+  // Sort descending by createdAt safely
   allOrders.sort((a, b) => {
-    const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const dbTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return dbTime - da;
+    const da = a.createdAt && a.createdAt !== "undefined" ? new Date(a.createdAt).getTime() : 0;
+    const dbTime = b.createdAt && b.createdAt !== "undefined" ? new Date(b.createdAt).getTime() : 0;
+    return (isNaN(dbTime) ? 0 : dbTime) - (isNaN(da) ? 0 : da);
   });
 
   const total = allOrders.length;

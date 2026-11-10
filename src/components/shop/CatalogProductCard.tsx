@@ -44,6 +44,8 @@ export default function CatalogProductCard({ product }: CatalogProductCardProps)
     addItem(
       {
         id: product.id,
+        productId: product.id,
+        productSlug: product.slug,
         name: product.name,
         price: product.basePrice,
         imageSrc: product.images[0] || "/images/hero-composition.jpg",
@@ -165,11 +167,11 @@ export default function CatalogProductCard({ product }: CatalogProductCardProps)
         <div className="grid grid-cols-5 gap-2 pt-1">
           <Link
             href={`/shop/${product.slug}`}
-            className="col-span-4 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-bg-surface-alt border border-border-subtle hover:border-brand-yellow/60 hover:text-brand-yellow text-xs font-bold text-text-primary transition-all group/btn"
+            className="col-span-4 inline-flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-lg bg-bg-surface-alt border border-border-subtle hover:border-brand-yellow/60 hover:text-brand-yellow text-xs font-bold text-text-primary transition-all group/btn min-w-0"
           >
-            <SlidersHorizontal size={13} />
-            <span>Customize & Price</span>
-            <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform" />
+            <SlidersHorizontal size={13} className="shrink-0" />
+            <span className="truncate">Customize & Price</span>
+            <ArrowRight size={13} className="group-hover/btn:translate-x-1 transition-transform shrink-0" />
           </Link>
 
           <button

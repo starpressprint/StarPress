@@ -147,7 +147,7 @@ function AdminLoginForm() {
   };
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden bg-[#07090E]">
+    <div className="relative min-h-screen w-full flex items-center justify-center p-4 sm:p-6 overflow-y-auto overflow-x-hidden py-8 sm:py-12 bg-[#07090E]">
       {/* Background Graphic Asset */}
       <div className="absolute inset-0 z-0 opacity-20 pointer-events-none select-none">
         <Image

@@ -8,6 +8,14 @@ import { verifyAdminAccess } from "@/lib/admin/auth-check";
 import { db } from "@/lib/db";
 import { persistentStore } from "@/server/storage";
 
+function safeIsoDate(val: any): string {
+  if (!val || val === "undefined" || val === "null") {
+    return new Date().toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 interface RouteParams {
   params: { id: string };
 }
@@ -143,7 +151,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const formattedOrders = orders.map((o) => ({
       id: o.id,
       orderNumber: o.orderNumber,
-      date: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
+      date: safeIsoDate(o.createdAt),
       itemCount: Array.isArray(o.items)
         ? o.items.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0)
         : 1,
@@ -163,7 +171,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         phone: primaryPhone,
         isRegistered: Boolean(user),
         avatar: user?.avatar || null,
-        createdAt: user?.createdAt ? new Date(user.createdAt).toISOString() : firstOrderDate,
+        createdAt: safeIsoDate(user?.createdAt || firstOrderDate),
         metrics: {
           totalOrders,
           totalSpent,

@@ -179,16 +179,16 @@ export default function FAQPage() {
     <div className="flex min-h-screen flex-col bg-bg-base text-text-primary selection:bg-brand-yellow selection:text-black">
       <Header />
 
-      <main className="flex-1 max-w-[1080px] w-full mx-auto px-6 lg:px-10 py-10 md:py-14">
+      <main className="flex-1 max-w-[1080px] w-full mx-auto px-4 xs:px-6 lg:px-10 py-8 sm:py-10 md:py-14">
         {/* Page Hero */}
-        <div className="relative rounded-[28px] border border-border-subtle bg-bg-surface p-8 sm:p-14 mb-10 overflow-hidden shadow-xl text-center">
+        <div className="relative rounded-[28px] border border-border-subtle bg-bg-surface p-5 xs:p-7 sm:p-12 mb-8 sm:mb-10 overflow-hidden shadow-xl text-center">
           <div className="relative z-10 max-w-2xl mx-auto space-y-4">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-border-subtle bg-bg-surface-alt text-text-secondary text-xs font-semibold uppercase tracking-wider">
               <HelpCircle size={13} className="text-brand-yellow" />
               <span>Knowledge Base & Pre-Press Help</span>
             </div>
 
-            <h1 className="font-display font-black text-3xl sm:text-5xl uppercase text-text-primary tracking-tight leading-[1.1]">
+            <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-5xl uppercase text-text-primary tracking-tight leading-[1.1] break-words">
               Frequently Asked Questions
             </h1>
 
@@ -215,7 +215,7 @@ export default function FAQPage() {
         </div>
 
         {/* Category Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 scrollbar-none no-scrollbar overscroll-x-contain">
           {CATEGORIES.map((cat) => {
             const anchorId =
               cat === "Artwork & Design Files"

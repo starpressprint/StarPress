@@ -3,6 +3,14 @@ import { verifyAdminAccess } from "@/lib/admin/auth-check";
 import { db } from "@/lib/db";
 import { persistentStore } from "@/server/storage";
 
+function safeIsoDate(val: any): string {
+  if (!val || val === "undefined" || val === "null") {
+    return new Date().toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
@@ -43,7 +51,7 @@ export async function GET(request: NextRequest) {
 
       transactions.push({
         id: `txn_${o.id}`,
-        date: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
+        date: safeIsoDate(o.createdAt),
         type: isRefunded ? "refund" : "sale",
         description: `Order ${o.orderNumber} — ${o.guestName || "Customer"}`,
         amount: isRefunded ? -amount : amount,

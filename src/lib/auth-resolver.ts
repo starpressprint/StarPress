@@ -10,6 +10,8 @@ export interface ResolvedUser {
   name?: string | null;
   phone?: string | null;
   role?: string;
+  app_metadata?: any;
+  email_confirmed_at?: string | null;
 }
 
 /**

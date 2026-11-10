@@ -1,23 +1,40 @@
 // =============================================================================
 // POST /api/verify-payment
-// Standard Razorpay Signature Verification Endpoint (HMAC-SHA256)
+// Standard Razorpay Signature Verification Endpoint (HMAC-SHA256 + REST Verification)
+// Strictly enforces genuine payments & ownership — Zero mock fallbacks
 // =============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { getRazorpayCredentials } from "@/server/payments";
+import { getRazorpayCredentials, recordPaymentSuccess } from "@/server/payments";
+import { isUserAdmin } from "@/lib/admin/is-admin";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const { keySecret } = getRazorpayCredentials();
+    const { keyId, keySecret } = getRazorpayCredentials();
 
-    if (!keySecret) {
-      console.error("[Razorpay Error] RAZORPAY_KEY_SECRET is not configured on the server.");
+    if (!keyId || !keySecret) {
+      console.error("[Razorpay Error] Razorpay credentials are not configured on the server.");
       return NextResponse.json(
-        { error: "RAZORPAY_KEY_SECRET is not configured on the server." },
+        { error: "Razorpay credentials are not configured on the server." },
         { status: 500 }
+      );
+    }
+
+    // 1. Mandatory user authentication
+    let user = null;
+    try {
+      const { resolveUser } = await import("@/lib/auth-resolver");
+      user = await resolveUser(request);
+    } catch {}
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Authentication required to verify payment. Please sign in." },
+        { status: 401 }
       );
     }
 
@@ -25,6 +42,7 @@ export async function POST(request: NextRequest) {
     const orderId = body.order_id || body.razorpay_order_id;
     const paymentId = body.payment_id || body.razorpay_payment_id;
     const signature = body.signature || body.razorpay_signature;
+    const starpressOrderId = body.starpressOrderId || body.orderId;
 
     if (!orderId || !paymentId || !signature) {
       return NextResponse.json(
@@ -33,7 +51,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Strict defense: Reject mock or simulated values
+    // 2. Strict defense: Reject mock or simulated values
     if (
       String(orderId).startsWith("order_mock_") ||
       String(paymentId).startsWith("pay_mock_") ||
@@ -46,7 +64,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Algorithm: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
+    // 3. Algorithm: HMAC-SHA256(order_id + "|" + payment_id, KEY_SECRET)
     const generatedSignature = crypto
       .createHmac("sha256", keySecret)
       .update(`${orderId}|${paymentId}`)
@@ -67,37 +85,95 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If linked to an internal Star Press order, sync DB record
-    let linkedOrderNumber: string | undefined;
-    try {
-      const { db } = await import("@/lib/db");
-      const { recordPaymentSuccess } = await import("@/server/payments");
+    // 4. Resolve Star Press DB order strictly linked to this razorpayOrderId
+    const dbOrder = await db.order.findFirst({
+      where: {
+        razorpayOrderId: orderId,
+        ...(starpressOrderId ? { id: starpressOrderId } : {}),
+      },
+    });
 
-      const dbOrder = await db.order.findFirst({
-        where: {
-          OR: [
-            ...(body.starpressOrderId ? [{ id: body.starpressOrderId }] : []),
-            { razorpayOrderId: orderId },
-          ],
-        },
+    if (!dbOrder) {
+      return NextResponse.json(
+        { success: false, error: "Associated order not found for this payment reference." },
+        { status: 404 }
+      );
+    }
+
+    // 5. Ownership verification
+    const isAdmin = isUserAdmin(user);
+    const isOwner =
+      (dbOrder.userId && dbOrder.userId === user.id) ||
+      (dbOrder.guestEmail && user.email && dbOrder.guestEmail.toLowerCase().trim() === user.email.toLowerCase().trim());
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized access to order." },
+        { status: 403 }
+      );
+    }
+
+    // 6. Authoritative REST verification with Razorpay to verify exact captured amount
+    const expectedPaise = Math.round(Number(dbOrder.totalAmount) * 100);
+    const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+    const rzpRes = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+      },
+    });
+
+    if (!rzpRes.ok) {
+      console.error(`[Razorpay REST] Payment lookup failed with status: ${rzpRes.status}`);
+      return NextResponse.json(
+        { success: false, error: "Could not verify payment with Razorpay authority." },
+        { status: 502 }
+      );
+    }
+
+    const paymentData = await rzpRes.json();
+
+    if (paymentData.status !== "captured" && paymentData.status !== "authorized") {
+      return NextResponse.json(
+        { success: false, error: `Payment is not in captured status (current: ${paymentData.status}).` },
+        { status: 400 }
+      );
+    }
+
+    if (paymentData.amount !== expectedPaise) {
+      console.error(
+        `[Payment Security Alert] Amount mismatch! Gateway: ${paymentData.amount} paise, Expected: ${expectedPaise} paise.`
+      );
+      return NextResponse.json(
+        { success: false, error: "Payment amount does not match order total." },
+        { status: 400 }
+      );
+    }
+
+    if (paymentData.currency && paymentData.currency.toUpperCase() !== "INR") {
+      return NextResponse.json(
+        { success: false, error: "Payment currency mismatch." },
+        { status: 400 }
+      );
+    }
+
+    if (paymentData.order_id && paymentData.order_id !== orderId) {
+      return NextResponse.json(
+        { success: false, error: "Gateway order ID mismatch." },
+        { status: 400 }
+      );
+    }
+
+    // 7. Authoritatively record payment success
+    if (dbOrder.paymentStatus !== "PAID") {
+      await recordPaymentSuccess({
+        orderId: dbOrder.id,
+        paymentId,
+        razorpayOrderId: orderId,
+        signature,
+        method: paymentData.method || "ONLINE",
+        amount: Number(dbOrder.totalAmount),
+        rawPayload: { verifiedVia: "/api/verify-payment", at: new Date().toISOString() },
       });
-
-      if (dbOrder) {
-        linkedOrderNumber = dbOrder.orderNumber;
-        if (dbOrder.paymentStatus !== "PAID") {
-          await recordPaymentSuccess({
-            orderId: dbOrder.id,
-            paymentId,
-            razorpayOrderId: orderId,
-            signature,
-            method: "ONLINE",
-            amount: Number(dbOrder.totalAmount),
-            rawPayload: { verifiedVia: "/api/verify-payment", at: new Date().toISOString() },
-          });
-        }
-      }
-    } catch (dbErr) {
-      console.warn("[verify-payment] Internal order sync notice:", dbErr);
     }
 
     return NextResponse.json({
@@ -105,7 +181,7 @@ export async function POST(request: NextRequest) {
       message: "Payment signature verified successfully.",
       order_id: orderId,
       payment_id: paymentId,
-      orderNumber: linkedOrderNumber,
+      orderNumber: dbOrder.orderNumber,
     });
   } catch (error: any) {
     console.error("[Razorpay API] verify-payment error:", error);

@@ -148,24 +148,24 @@ function TrackContent() {
   );
 
   return (
-    <div className="max-w-[1000px] w-full mx-auto px-6 py-10 md:py-16 space-y-8">
+    <div className="max-w-[1000px] w-full mx-auto px-4 xs:px-6 py-8 sm:py-10 md:py-16 space-y-8">
       {/* Header */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-brand-yellow/30 bg-brand-yellow/10 text-brand-yellow text-xs font-bold uppercase tracking-wider">
           <Truck size={14} />
           <span>Real-Time Shipment & Press Tracker</span>
         </div>
-        <h1 className="font-display font-black text-3xl sm:text-4xl text-text-primary uppercase tracking-tight">
+        <h1 className="font-display font-black text-2xl xs:text-3xl sm:text-4xl text-text-primary uppercase tracking-tight break-words">
           Track Your Print Order
         </h1>
-        <p className="text-sm text-text-secondary max-w-lg mx-auto">
+        <p className="text-xs sm:text-sm text-text-secondary max-w-lg mx-auto">
           Enter your Star Press order number and verified contact details to view live
           press proofing, manufacturing progress, and courier transit.
         </p>
       </div>
 
       {/* Lookup Card */}
-      <div className="rounded-2xl border border-border-subtle bg-bg-surface p-6 sm:p-8 shadow-xl max-w-2xl mx-auto">
+      <div className="rounded-2xl border border-border-subtle bg-bg-surface p-4 xs:p-6 sm:p-8 shadow-xl max-w-2xl mx-auto">
         <form onSubmit={handleSearch} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="space-y-1.5">

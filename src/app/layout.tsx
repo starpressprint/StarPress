@@ -133,7 +133,7 @@ export default function RootLayout({
         />
         <JsonLd />
       </head>
-      <body className="bg-bg-base text-text-primary font-sans antialiased selection:bg-brand-yellow selection:text-black min-h-screen">
+      <body className="bg-bg-base text-text-primary font-sans antialiased selection:bg-brand-yellow selection:text-black min-h-screen overflow-x-hidden w-full max-w-full relative">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
