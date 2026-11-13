@@ -1,7 +1,5 @@
+import { addressSchema, addressUpdateSchema } from "@/lib/validation/account";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { getSessionUser } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
 import { ensureDbUser } from "@/lib/user-sync";
 
@@ -32,7 +30,8 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({ success: true, addresses });
     } catch (dbErr) {
-      return NextResponse.json({ success: true, addresses: [] });
+      console.error("Account database operation failed:", dbErr);
+      return NextResponse.json({ error: "Account service is temporarily unavailable. Please retry." }, { status: 503 });
     }
   } catch (error) {
     console.error("API /api/account/addresses GET error:", error);
@@ -55,7 +54,9 @@ export async function POST(request: NextRequest) {
 
     await ensureDbUser(user);
 
-    const body = await request.json();
+    const parsed = addressSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid address" }, { status: 400 });
+    const body = parsed.data;
     const { label, line1, line2, city, state, pincode, phone, isDefault } = body;
 
     const trimmedLine1 = (line1 || "").trim();
@@ -79,48 +80,38 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // Check if user already has addresses; if this is the first address, make it default automatically
-      const existingCount = await db.address.count({ where: { userId: user.id } });
-      const makeDefault = Boolean(isDefault) || existingCount === 0;
+      return await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
+        // Check if user already has addresses; if this is the first address, make it default automatically
+        const existingCount = await tx.address.count({ where: { userId: user.id } });
+        const makeDefault = Boolean(isDefault) || existingCount === 0;
 
-      if (makeDefault) {
-        await db.address.updateMany({
-          where: { userId: user.id },
-          data: { isDefault: false },
+        if (makeDefault) {
+          await tx.address.updateMany({
+            where: { userId: user.id },
+            data: { isDefault: false },
+          });
+        }
+
+        const address = await tx.address.create({
+          data: {
+            userId: user.id,
+            label: (label || "").trim() || "Delivery Address",
+            line1: trimmedLine1,
+            line2: line2?.trim() || null,
+            city: trimmedCity,
+            state: trimmedState,
+            pincode: trimmedPincode,
+            phone: trimmedPhone,
+            isDefault: makeDefault,
+          },
         });
-      }
 
-      const address = await db.address.create({
-        data: {
-          userId: user.id,
-          label: (label || "").trim() || "Delivery Address",
-          line1: trimmedLine1,
-          line2: line2?.trim() || null,
-          city: trimmedCity,
-          state: trimmedState,
-          pincode: trimmedPincode,
-          phone: trimmedPhone,
-          isDefault: makeDefault,
-        },
+        return NextResponse.json({ success: true, address }, { status: 201 });
       });
-
-      return NextResponse.json({ success: true, address }, { status: 201 });
     } catch (dbErr) {
-      return NextResponse.json({
-        success: true,
-        address: {
-          id: `addr-${Date.now()}`,
-          userId: user.id,
-          label: (label || "").trim() || "Delivery Address",
-          line1: trimmedLine1,
-          line2: line2?.trim() || null,
-          city: trimmedCity,
-          state: trimmedState,
-          pincode: trimmedPincode,
-          phone: trimmedPhone,
-          isDefault: Boolean(isDefault),
-        },
-      }, { status: 201 });
+      console.error("Account database operation failed:", dbErr);
+      return NextResponse.json({ error: "Account service is temporarily unavailable. Please retry." }, { status: 503 });
     }
   } catch (error) {
     console.error("API /api/account/addresses POST error:", error);
@@ -143,7 +134,9 @@ export async function PUT(request: NextRequest) {
 
     await ensureDbUser(user);
 
-    const body = await request.json();
+    const parsed = addressUpdateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid address" }, { status: 400 });
+    const body = parsed.data;
     const { id, label, line1, line2, city, state, pincode, phone, isDefault } = body;
 
     if (!id) {
@@ -171,52 +164,42 @@ export async function PUT(request: NextRequest) {
     }
 
     try {
-      const existing = await db.address.findFirst({
-        where: { id, userId: user.id },
-      });
-
-      if (!existing) {
-        return NextResponse.json({ error: "Address not found or unauthorized." }, { status: 404 });
-      }
-
-      if (isDefault) {
-        await db.address.updateMany({
-          where: { userId: user.id },
-          data: { isDefault: false },
+      return await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
+        const existing = await tx.address.findFirst({
+          where: { id, userId: user.id },
         });
-      }
 
-      const updated = await db.address.update({
-        where: { id },
-        data: {
-          label: (label || "").trim() || "Delivery Address",
-          line1: trimmedLine1,
-          line2: line2?.trim() || null,
-          city: trimmedCity,
-          state: trimmedState,
-          pincode: trimmedPincode,
-          phone: trimmedPhone,
-          ...(isDefault !== undefined ? { isDefault: Boolean(isDefault) } : {}),
-        },
+        if (!existing) {
+          return NextResponse.json({ error: "Address not found or unauthorized." }, { status: 404 });
+        }
+
+        if (isDefault) {
+          await tx.address.updateMany({
+            where: { userId: user.id },
+            data: { isDefault: false },
+          });
+        }
+
+        const updated = await tx.address.update({
+          where: { id },
+          data: {
+            label: (label || "").trim() || "Delivery Address",
+            line1: trimmedLine1,
+            line2: line2?.trim() || null,
+            city: trimmedCity,
+            state: trimmedState,
+            pincode: trimmedPincode,
+            phone: trimmedPhone,
+            ...(isDefault !== undefined ? { isDefault: Boolean(isDefault) } : {}),
+          },
+        });
+
+        return NextResponse.json({ success: true, address: updated });
       });
-
-      return NextResponse.json({ success: true, address: updated });
     } catch (dbErr) {
-      return NextResponse.json({
-        success: true,
-        address: {
-          id,
-          userId: user.id,
-          label: label || "Delivery Address",
-          line1: trimmedLine1,
-          line2: line2 || null,
-          city: trimmedCity,
-          state: trimmedState,
-          pincode: trimmedPincode,
-          phone: trimmedPhone,
-          isDefault: Boolean(isDefault),
-        },
-      });
+      console.error("Account database operation failed:", dbErr);
+      return NextResponse.json({ error: "Account service is temporarily unavailable. Please retry." }, { status: 503 });
     }
   } catch (error) {
     console.error("API /api/account/addresses PUT error:", error);
@@ -245,40 +228,44 @@ export async function DELETE(request: NextRequest) {
       } catch {}
     }
 
-    if (!id) {
+    if (typeof id !== "string" || !id || id.length > 128) {
       return NextResponse.json({ error: "Address ID is required for deletion." }, { status: 400 });
     }
 
     try {
-      const existing = await db.address.findFirst({
-        where: { id, userId: user.id },
-      });
-
-      if (!existing) {
-        return NextResponse.json({ error: "Address not found or unauthorized." }, { status: 404 });
-      }
-
-      await db.address.delete({
-        where: { id },
-      });
-
-      // If the deleted address was the default, set another address as default if one exists
-      if (existing.isDefault) {
-        const remaining = await db.address.findFirst({
-          where: { userId: user.id },
-          orderBy: { createdAt: "desc" },
+      return await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR UPDATE`;
+        const existing = await tx.address.findFirst({
+          where: { id, userId: user.id },
         });
-        if (remaining) {
-          await db.address.update({
-            where: { id: remaining.id },
-            data: { isDefault: true },
-          });
-        }
-      }
 
-      return NextResponse.json({ success: true, message: "Address deleted successfully." });
+        if (!existing) {
+          return NextResponse.json({ error: "Address not found or unauthorized." }, { status: 404 });
+        }
+
+        await tx.address.delete({
+          where: { id },
+        });
+
+        // If the deleted address was the default, set another address as default if one exists
+        if (existing.isDefault) {
+          const remaining = await tx.address.findFirst({
+            where: { userId: user.id },
+            orderBy: { createdAt: "desc" },
+          });
+          if (remaining) {
+            await tx.address.update({
+              where: { id: remaining.id },
+              data: { isDefault: true },
+            });
+          }
+        }
+
+        return NextResponse.json({ success: true, message: "Address deleted successfully." });
+      });
     } catch (dbErr) {
-      return NextResponse.json({ success: true, message: "Address deleted." });
+      console.error("Account database operation failed:", dbErr);
+      return NextResponse.json({ error: "Account service is temporarily unavailable. Please retry." }, { status: 503 });
     }
   } catch (error) {
     console.error("API /api/account/addresses DELETE error:", error);

@@ -18,6 +18,9 @@ export interface WebhookRefundInput {
 
 /** Persist one Razorpay refund event using the same transaction used by production webhooks. */
 export async function processWebhookRefund(input: WebhookRefundInput, client: typeof db = db) {
+  if (!Number.isFinite(input.amount) || input.amount <= 0 || !["initiated", "pending", "processed", "failed"].includes(input.status)) {
+    throw new Error("Invalid refund amount or status");
+  }
   try {
     return await client.$transaction(async (tx) => {
       // Serialize all refund events for an order before checking the refund ID or total.
@@ -26,7 +29,14 @@ export async function processWebhookRefund(input: WebhookRefundInput, client: ty
       const existing = await tx.refund.findUnique({
         where: { razorpayRefundId: input.refundId },
       });
-      if (existing?.status === input.status) {
+      if (existing && (existing.orderId !== input.orderId ||
+        (existing.paymentId && input.paymentId && existing.paymentId !== input.paymentId) ||
+        Number(existing.amount) !== input.amount)) {
+        throw new Error("Refund event does not match its recorded order, payment or amount");
+      }
+      // A delayed event must never undo a completed refund or restart a failed one.
+      if (existing && (existing.status === input.status || existing.status === "processed" ||
+        (existing.status === "failed" && input.status !== "processed"))) {
         const order = await tx.order.findUnique({ where: { id: input.orderId }, select: { refundAmount: true, totalAmount: true } });
         return {
           skipped: true,

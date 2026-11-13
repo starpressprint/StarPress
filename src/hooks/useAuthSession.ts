@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useSession, signOut as signOutNextAuth } from 'next-auth/react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 import { isUserAdmin } from '@/lib/admin/is-admin';
@@ -59,6 +60,7 @@ function sanitizeUser(supabaseUser: User | null): AuthUser | null {
 }
 
 export function useAuthSession(): AuthState {
+  const { data: legacySession, status: legacyStatus } = useSession();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
   const [isHydrated, setIsHydrated] = useState(false);
@@ -132,7 +134,7 @@ export function useAuthSession(): AuthState {
   // Sign out helper
   const handleSignOut = useCallback(async () => {
     try {
-      await supabase.auth.signOut();
+      await Promise.all([supabase.auth.signOut(), signOutNextAuth({ redirect: false })]);
       setUser(null);
       setStatus('unauthenticated');
       if (typeof window !== 'undefined') {
@@ -177,13 +179,21 @@ export function useAuthSession(): AuthState {
     []
   );
 
-  const isAdmin = isUserAdmin(user);
-  const session = useMemo(() => (user ? { user } : null), [user]);
+  const effectiveUser = useMemo<AuthUser | null>(() => user || (legacySession?.user ? {
+    id: legacySession.user.id,
+    email: legacySession.user.email || '',
+    name: legacySession.user.name || 'Customer',
+    phone: legacySession.user.phone,
+    role: legacySession.user.role,
+  } : null), [user, legacySession]);
+  const isAdmin = isUserAdmin(effectiveUser);
+  const session = useMemo(() => (effectiveUser ? { user: effectiveUser } : null), [effectiveUser]);
 
   return {
-    user,
+    user: effectiveUser,
     session,
-    status: isHydrated ? status : 'loading',
+    status: !isHydrated ? 'loading' : effectiveUser ? 'authenticated'
+      : status === 'loading' || legacyStatus === 'loading' ? 'loading' : 'unauthenticated',
     isHydrated,
     isAdmin,
     isConfigured,

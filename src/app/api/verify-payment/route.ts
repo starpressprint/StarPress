@@ -1,3 +1,4 @@
+import { isOrderOwner } from "@/lib/order-access";
 // =============================================================================
 // POST /api/verify-payment
 // Standard Razorpay Signature Verification Endpoint (HMAC-SHA256 + REST Verification)
@@ -102,9 +103,7 @@ export async function POST(request: NextRequest) {
 
     // 5. Ownership verification
     const isAdmin = isUserAdmin(user);
-    const isOwner =
-      (dbOrder.userId && dbOrder.userId === user.id) ||
-      (dbOrder.guestEmail && user.email && dbOrder.guestEmail.toLowerCase().trim() === user.email.toLowerCase().trim());
+    const isOwner = isOrderOwner(dbOrder, user);
 
     if (!isOwner && !isAdmin) {
       return NextResponse.json(
@@ -132,7 +131,7 @@ export async function POST(request: NextRequest) {
 
     const paymentData = await rzpRes.json();
 
-    if (paymentData.status !== "captured" && paymentData.status !== "authorized") {
+    if (paymentData.status !== "captured") {
       return NextResponse.json(
         { success: false, error: `Payment is not in captured status (current: ${paymentData.status}).` },
         { status: 400 }
@@ -149,14 +148,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (paymentData.currency && paymentData.currency.toUpperCase() !== "INR") {
+    if (paymentData.currency !== "INR") {
       return NextResponse.json(
         { success: false, error: "Payment currency mismatch." },
         { status: 400 }
       );
     }
 
-    if (paymentData.order_id && paymentData.order_id !== orderId) {
+    if (paymentData.order_id !== orderId) {
       return NextResponse.json(
         { success: false, error: "Gateway order ID mismatch." },
         { status: 400 }
@@ -164,8 +163,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. Authoritatively record payment success
-    if (dbOrder.paymentStatus !== "PAID") {
-      await recordPaymentSuccess({
+    {
+      const result = await recordPaymentSuccess({
         orderId: dbOrder.id,
         paymentId,
         razorpayOrderId: orderId,
@@ -174,6 +173,9 @@ export async function POST(request: NextRequest) {
         amount: Number(dbOrder.totalAmount),
         rawPayload: { verifiedVia: "/api/verify-payment", at: new Date().toISOString() },
       });
+      if (!result.success) {
+        return NextResponse.json({ success: false, error: "Payment recording failed. Please retry verification." }, { status: 503 });
+      }
     }
 
     return NextResponse.json({

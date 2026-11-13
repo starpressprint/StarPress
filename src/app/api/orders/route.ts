@@ -1,3 +1,4 @@
+import { orderInputSchema } from "@/lib/validation/commerce";
 import { NextRequest, NextResponse } from "next/server";
 import { createOrder, CreateOrderInput } from "@/server/orders";
 import { getSessionUser } from "@/lib/supabase/server";
@@ -7,7 +8,9 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as CreateOrderInput;
+    const validation = orderInputSchema.safeParse(await request.json());
+    if (!validation.success) return NextResponse.json({ error: validation.error.issues[0]?.message || "Invalid order." }, { status: 400 });
+    const body: CreateOrderInput = validation.data;
 
     if (!body || !body.shippingAddress || !body.items || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json(
@@ -74,6 +77,9 @@ export async function POST(request: NextRequest) {
       body.idempotencyKey;
 
     if (idempotencyKey) {
+      if (!/^[a-zA-Z0-9_-]{1,128}$/.test(idempotencyKey)) {
+        return NextResponse.json({ error: "Invalid idempotency key." }, { status: 400 });
+      }
       body.idempotencyKey = idempotencyKey;
     }
 

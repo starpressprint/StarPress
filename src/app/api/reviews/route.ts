@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getSessionUser } from "@/lib/supabase/server";
+import { resolveUser } from "@/lib/auth-resolver";
+import { rateLimitDistributed, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +38,9 @@ export async function GET(request: NextRequest) {
     const formatted = reviews.map((r) => ({
       id: r.id,
       name: r.user?.name || "Verified Customer",
-      role: "Verified Buyer",
+      role: "Customer",
       rating: r.rating,
-      quote: r.comment || "Great quality print and professional finish.",
+      quote: r.comment || "",
       productName: r.product?.name || "Custom Print",
       productSlug: r.product?.slug || "",
       createdAt: r.createdAt.toISOString(),
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getSessionUser();
+    const user = await resolveUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "Please sign in to leave a review." },
@@ -65,11 +66,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const rl = await rateLimitDistributed(`reviews:create:${user.id}`, 5, 60);
+    if (!rl.success) return rateLimitExceededResponse(rl, "Too many reviews. Please wait.");
     const body = await request.json();
     const { productId, rating, comment } = body;
 
     const numRating = Number(rating);
-    if (!productId || isNaN(numRating) || numRating < 1 || numRating > 5) {
+    if (typeof productId !== "string" || !productId.trim() || productId.length > 200 || !Number.isInteger(numRating) || numRating < 1 || numRating > 5) {
       return NextResponse.json(
         { error: "Valid productId and rating (1 to 5) are required." },
         { status: 400 }
@@ -82,20 +85,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!dbProd) {
-      // Find category first
-      const defaultCat = await db.category.findFirst();
-      if (!defaultCat) {
-        return NextResponse.json({ error: "Product not found." }, { status: 404 });
-      }
-      dbProd = await db.product.create({
-        data: {
-          name: productId.replace(/-/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
-          slug: productId,
-          categoryId: defaultCat.id,
-          basePrice: 299,
-          status: "published",
-        },
-      });
+      return NextResponse.json({ error: "Product not found." }, { status: 404 });
     }
 
     // Create review

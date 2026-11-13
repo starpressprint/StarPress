@@ -490,7 +490,7 @@ async function runTests() {
     {
       orderId: order6A.order.id,
       paymentId: "pay_late_success",
-      amount: 100,
+      amount: Number(order6A.order.totalAmount),
       method: "UPI",
     },
     db6A as any
@@ -541,7 +541,7 @@ async function runTests() {
     {
       orderId: order6B.order.id,
       paymentId: "pay_late_out_of_stock",
-      amount: 100,
+      amount: Number(order6B.order.totalAmount),
       method: "CARD",
     },
     db6B as any

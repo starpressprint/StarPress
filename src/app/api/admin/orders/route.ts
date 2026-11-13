@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     console.error("API /api/admin/orders POST error:", error);
     return NextResponse.json(
       { error: error?.message || "Failed to create order." },
-      { status: 500 }
+      { status: error?.statusCode || 500 }
     );
   }
 }

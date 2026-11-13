@@ -1,3 +1,4 @@
+import { productUpdateSchema } from "@/lib/validation/admin-product";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { verifyAdminAccess } from "@/lib/admin/auth-check";
@@ -55,7 +56,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const body = await request.json();
+    const parsed = productUpdateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid product" }, { status: 400 });
+    const body = parsed.data;
     const ipAddress = request.headers.get("x-forwarded-for") || undefined;
     const result = await updateAdminProduct(
       params.id,

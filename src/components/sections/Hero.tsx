@@ -191,18 +191,12 @@ export default function Hero({ slides: propSlides }: HeroProps) {
                     }}
                   />
                 ) : (
-                  <img
-                    src={s.src}
+                  <Image
+                    src={defaultSlides[index % defaultSlides.length]?.src || "/images/Slider/NamePlates.jpeg"}
                     alt={s.alt}
-                    className="w-full h-full object-cover object-center absolute inset-0"
-                    onError={(e) => {
-                      // Fallback to default slide if external url is invalid
-                      const target = e.currentTarget;
-                      if (!target.dataset.fallbackApplied) {
-                        target.dataset.fallbackApplied = "true";
-                        target.src = defaultSlides[index % defaultSlides.length]?.src || "/images/Slider/NamePlates.jpeg";
-                      }
-                    }}
+                    fill
+                    sizes="100vw"
+                    className="object-cover object-center"
                   />
                 )}
               </div>

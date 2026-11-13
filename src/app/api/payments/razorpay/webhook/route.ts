@@ -153,6 +153,12 @@ export async function POST(request: NextRequest) {
     const keyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET || env.RAZORPAY_KEY_SECRET;
 
+    if (["payment.captured", "order.paid", "payment.authorized"].includes(eventType) &&
+        (!paymentEntity?.id || paymentEntity.currency !== "INR" || !rzpOrderId ||
+         rzpOrderId !== (targetOrder as any).razorpayOrderId)) {
+      return NextResponse.json({ error: "Payment gateway reference or currency mismatch." }, { status: 400 });
+    }
+
     // 8. Event Handling
     // -------------------------------------------------------------------------
     // 8A. Payment Captured or Order Paid
@@ -195,7 +201,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (pId) {
-        await recordPaymentSuccess({
+        const captureResult = await recordPaymentSuccess({
           orderId: targetOrder.id,
           paymentId: pId,
           razorpayOrderId: rzpOrderId,
@@ -204,6 +210,7 @@ export async function POST(request: NextRequest) {
           amount: Number(targetOrder.totalAmount),
           rawPayload: event,
         });
+        if (!captureResult.success) throw new Error("Capture persistence failed; webhook must be retried.");
       }
     }
 
@@ -239,7 +246,11 @@ export async function POST(request: NextRequest) {
 
         if (captureRes.ok) {
           const captureData = await captureRes.json();
-          await recordPaymentSuccess({
+          if (captureData.status !== "captured" || captureData.amount !== expectedPaise ||
+              captureData.currency !== "INR" || captureData.order_id !== rzpOrderId) {
+            throw new Error("Gateway capture response could not be verified.");
+          }
+          const captureResult = await recordPaymentSuccess({
             orderId: targetOrder.id,
             paymentId: pId,
             razorpayOrderId: rzpOrderId,
@@ -248,6 +259,7 @@ export async function POST(request: NextRequest) {
             amount: Number(targetOrder.totalAmount),
             rawPayload: captureData,
           });
+          if (!captureResult.success) throw new Error("Capture persistence failed; webhook must be retried.");
 
           await auditPaymentEvent({
             orderId: targetOrder.id,

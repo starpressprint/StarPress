@@ -35,6 +35,8 @@ export async function resolveUser(request?: NextRequest): Promise<ResolvedUser |
         name: supabaseUser.name || (supabaseUser.email ? supabaseUser.email.split("@")[0] : "Customer"),
         phone: supabaseUser.phone || null,
         role: supabaseUser.role || "CUSTOMER",
+        app_metadata: supabaseUser.app_metadata,
+        email_confirmed_at: supabaseUser.email_confirmed_at,
       };
     }
   } catch {}
@@ -81,6 +83,8 @@ export async function resolveUser(request?: NextRequest): Promise<ResolvedUser |
               (email ? email.split("@")[0] : "Customer"),
             phone: data.user.phone || data.user.user_metadata?.phone || null,
             role: data.user.app_metadata?.role || "CUSTOMER",
+            app_metadata: data.user.app_metadata,
+            email_confirmed_at: data.user.email_confirmed_at,
           };
         }
       }
@@ -90,7 +94,9 @@ export async function resolveUser(request?: NextRequest): Promise<ResolvedUser |
   // Ensure DB user sync if resolved
   if (resolved) {
     try {
-      await ensureDbUser(resolved);
+      const dbUser = await ensureDbUser(resolved);
+      if (dbUser) resolved = { ...resolved, id: dbUser.id, role: dbUser.role,
+        email_confirmed_at: resolved.email_confirmed_at || dbUser.emailVerified?.toISOString() || null };
     } catch (syncErr) {
       console.warn("[resolveUser] Non-fatal DB user sync warning:", syncErr);
     }

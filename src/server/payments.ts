@@ -1,4 +1,6 @@
+import { isOrderOwner } from "@/lib/order-access";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
@@ -13,6 +15,7 @@ export interface CreateRazorpayOrderInput {
   orderId: string;
   sessionUserId?: string;
   sessionUserEmail?: string;
+  sessionEmailVerified?: boolean;
   isAdmin?: boolean;
 }
 
@@ -85,12 +88,11 @@ export async function createRazorpayOrder(input: CreateRazorpayOrderInput) {
   }
 
   // 3. Ownership check: strictly verify order ownership or admin clearance
-  const isOwner =
-    (input.sessionUserId && order.userId === input.sessionUserId) ||
-    (input.sessionUserEmail && order.guestEmail && order.guestEmail.toLowerCase().trim() === input.sessionUserEmail.toLowerCase().trim());
+  const isOwner = isOrderOwner(order, { id: input.sessionUserId, email: input.sessionUserEmail,
+    email_confirmed_at: input.sessionEmailVerified ? "verified" : null });
   const isAdmin = Boolean(input.isAdmin);
 
-  if ((order.userId || order.guestEmail) && (input.sessionUserId || input.sessionUserEmail) && !isOwner && !isAdmin) {
+  if (!isOwner && !isAdmin) {
     const err = new Error("Order not found.");
     (err as any).statusCode = 404;
     throw err;
@@ -340,7 +342,10 @@ export async function recordPaymentSuccess(
       where: { gatewayPaymentId: params.paymentId },
     });
 
-    if (existingTx) {
+    if (existingTx && existingTx.orderId !== params.orderId) {
+      return { success: false, error: "Payment is already associated with another order." };
+    }
+    if (existingTx && existingTx.status !== "FAILED") {
       console.log(`[Payment Idempotency] Gateway transaction ${params.paymentId} already recorded. Skipping duplicate.`);
       const existingOrder = await client.order.findUnique({
         where: { id: params.orderId },
@@ -362,6 +367,21 @@ export async function recordPaymentSuccess(
       if (!targetOrder) {
         throw new Error(`Order ${params.orderId} not found for payment recording.`);
       }
+
+      if (!Number.isFinite(params.amount) || params.amount <= 0 ||
+          Math.round(params.amount * 100) !== Math.round(Number(targetOrder.totalAmount) * 100)) {
+        throw new Error("Payment amount does not match order total.");
+      }
+      if (params.razorpayOrderId && targetOrder.razorpayOrderId !== params.razorpayOrderId) {
+        throw new Error("Order gateway reference mismatch.");
+      }
+
+      // A late capture may follow a FAILED event for the same gateway payment.
+      // Upgrade that ledger row instead of violating its unique payment ID.
+      const writeCapture = ({ data }: { data: Prisma.PaymentTransactionUncheckedCreateInput }) =>
+        existingTx
+          ? tx.paymentTransaction.update({ where: { id: existingTx.id }, data })
+          : tx.paymentTransaction.create({ data });
 
       // Extract payment method details
       const payload = params.rawPayload || {};
@@ -419,7 +439,7 @@ export async function recordPaymentSuccess(
             }
 
             // Record successful payment transaction
-            await tx.paymentTransaction.create({
+            await writeCapture({
               data: {
                 orderId: targetOrder.id,
                 gateway: "RAZORPAY",
@@ -456,7 +476,7 @@ export async function recordPaymentSuccess(
             return { ...reinstatedOrder, reinstatedAfterExpiry: true };
           } else {
             // Stock insufficient: mark transaction REFUND_FLAGGED for automated refund sweep
-            await tx.paymentTransaction.create({
+            await writeCapture({
               data: {
                 orderId: targetOrder.id,
                 gateway: "RAZORPAY",
@@ -492,7 +512,7 @@ export async function recordPaymentSuccess(
           }
         } else {
           // Stock was never restocked (inventory was held). Reinstate order directly.
-          await tx.paymentTransaction.create({
+          await writeCapture({
             data: {
               orderId: targetOrder.id,
               gateway: "RAZORPAY",
@@ -535,7 +555,7 @@ export async function recordPaymentSuccess(
         );
 
         // Record payment transaction with status REFUND_FLAGGED
-        await tx.paymentTransaction.create({
+        await writeCapture({
           data: {
             orderId: targetOrder.id,
             gateway: "RAZORPAY",
@@ -573,7 +593,7 @@ export async function recordPaymentSuccess(
       }
 
       // Record transaction
-      await tx.paymentTransaction.create({
+      await writeCapture({
         data: {
           orderId: targetOrder.id,
           gateway: "RAZORPAY",
@@ -605,29 +625,11 @@ export async function recordPaymentSuccess(
         include: { items: true },
       });
 
-      // Increment coupon usedCount if a coupon was used (race-condition safe)
       if (Number(saved.discountAmount || 0) > 0) {
-        // Try finding discount code in notes e.g. [coupon:CODE]
-        const couponMatch = saved.notes?.match(/\[coupon:([A-Za-z0-9_-]+)\]/);
-        if (couponMatch && couponMatch[1]) {
-          try {
-            const couponCode = couponMatch[1].toUpperCase();
-            const discountDoc = await tx.discount.findUnique({
-              where: { code: couponCode },
-            });
-            if (discountDoc) {
-              if (discountDoc.maxUses && discountDoc.usedCount >= discountDoc.maxUses) {
-                console.warn(`[Coupon Race] Coupon ${couponCode} usage limit reached (${discountDoc.usedCount}/${discountDoc.maxUses}).`);
-              } else {
-                await tx.discount.update({
-                  where: { id: discountDoc.id },
-                  data: { usedCount: { increment: 1 } },
-                });
-              }
-            }
-          } catch (cErr) {
-            console.warn("Could not increment coupon usedCount:", cErr);
-          }
+        const code = saved.notes?.match(/\[coupon:([A-Za-z0-9_-]+)\]/)?.[1]?.toUpperCase();
+        if (code) {
+          await tx.$queryRaw`SELECT id FROM "Discount" WHERE code = ${code} FOR UPDATE`;
+          await tx.discount.updateMany({ where: { code }, data: { usedCount: { increment: 1 } } });
         }
       }
 

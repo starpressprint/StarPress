@@ -109,14 +109,15 @@ export async function middleware(req: NextRequest) {
   }
 
   // 2. Determine if this route requires authentication checks
-  const isProtectedCustomerRoute = PROTECTED_CUSTOMER_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
+  const isProtectedCustomerRoute = pathname !== "/orders/track" && PROTECTED_CUSTOMER_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
   const isAuthRoute = CUSTOMER_AUTH_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
   const isAdminRoute = pathname.startsWith("/admin");
   const isPublicStoreRoute = PUBLIC_STORE_ROUTES.some(r => pathname === r || pathname.startsWith(`${r}/`));
   
   // We MUST check auth on the admin domain, admin routes, protected routes, and auth routes.
   // We can skip the expensive Supabase API call on purely public storefront routes (like /, /shop)
-  const requiresAuthCheck = isAdminHost || isAdminRoute || isProtectedCustomerRoute || isAuthRoute || (!isPublicStoreRoute && pathname !== "/");
+  const requiresAuthCheck = !pathname.startsWith("/api/") &&
+    (isAdminHost || isAdminRoute || isProtectedCustomerRoute || isAuthRoute);
 
   let response = NextResponse.next({ request: req });
   let isAuthenticated = false;
@@ -129,6 +130,12 @@ export async function middleware(req: NextRequest) {
     isAuthenticated = !!user;
     
     isAdmin = isUserAdmin(user);
+    if (!isAuthenticated) {
+      const { getToken } = await import("next-auth/jwt");
+      const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+      isAuthenticated = Boolean(token);
+      isAdmin = token?.role === "ADMIN";
+    }
   }
 
   // Helper: preserve refreshed cookies and query strings across all redirects (no-cache headers to prevent browser caching)
@@ -303,7 +310,7 @@ export async function middleware(req: NextRequest) {
 
   // B2. Protected Customer Routes Guard (/account)
   if (
-    PROTECTED_CUSTOMER_ROUTES.some(
+    isProtectedCustomerRoute && PROTECTED_CUSTOMER_ROUTES.some(
       (route) => pathname === route || pathname.startsWith(`${route}/`)
     )
   ) {

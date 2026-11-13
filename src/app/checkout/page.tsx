@@ -149,6 +149,8 @@ export default function CheckoutPage() {
 
   // Server Quote & In-Flight State
   const [serverQuote, setServerQuote] = useState<any | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [recoveryOrderId, setRecoveryOrderId] = useState<string | null>(null);
@@ -253,6 +255,10 @@ export default function CheckoutPage() {
     if (!items || items.length === 0) return;
 
     let isMounted = true;
+    const controller = new AbortController();
+    setServerQuote(null);
+    setQuoteError(null);
+    setQuoteLoading(true);
     async function fetchQuote() {
       try {
         const quotePayload = {
@@ -273,10 +279,12 @@ export default function CheckoutPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(quotePayload),
+          signal: controller.signal,
         });
 
+        const data = await res.json();
+        if (!res.ok || !data.quote) throw new Error(data.error || "Unable to confirm prices. Please try again.");
         if (res.ok) {
-          const data = await res.json();
           if (isMounted && data.quote) {
             setServerQuote(data.quote);
             if (data.quote.couponApplied) {
@@ -292,12 +300,17 @@ export default function CheckoutPage() {
             }
           }
         }
-      } catch {}
+      } catch (error) {
+        if (isMounted) setQuoteError(error instanceof Error ? error.message : "Unable to confirm prices.");
+      } finally {
+        if (isMounted) setQuoteLoading(false);
+      }
     }
 
     fetchQuote();
     return () => {
       isMounted = false;
+      controller.abort();
     };
   }, [items, deliveryOption, couponCode]);
 
@@ -391,6 +404,10 @@ export default function CheckoutPage() {
 
   // Place Order Action
   const handlePlaceOrder = async () => {
+    if (!serverQuote || quoteLoading || quoteError) {
+      setCheckoutError("Please wait for a valid price quote before placing your order.");
+      return;
+    }
     if (!session?.user) {
       setShowAuthModal(true);
       setCheckoutError("Authentication is mandatory to place an order. Please sign in.");
@@ -406,22 +423,14 @@ export default function CheckoutPage() {
     setIsSubmitting(true);
 
     try {
-      // Validate session token with Supabase to reject expired sessions
+      // Send a Supabase bearer token when available. NextAuth uses same-origin
+      // cookies; the order API authoritatively validates either provider.
       let authToken: string | undefined;
       try {
-        const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-        if (sessionErr || !sessionData?.session || !sessionData.session.user) {
-          setShowAuthModal(true);
-          setCheckoutError("Your login session has expired. Please sign in again to complete your order.");
-          setIsSubmitting(false);
-          return;
-        }
-        authToken = sessionData.session.access_token;
+        const { data: sessionData } = await supabase.auth.getSession();
+        authToken = sessionData?.session?.access_token;
       } catch {
-        setShowAuthModal(true);
-        setCheckoutError("Authentication session error. Please sign in again to continue.");
-        setIsSubmitting(false);
-        return;
+        // Cookie-based authentication is still checked by the server.
       }
 
       const clientEmail = session.user.email;
@@ -498,8 +507,11 @@ export default function CheckoutPage() {
 
       const placedOrder = orderData.order;
 
-      // 2. Pay After Proof / Free Order flow
-      if (paymentMethod !== "online" || Number(placedOrder.totalAmount) <= 0) {
+      if (placedOrder.status === "CANCELLED") {
+        throw new Error("This checkout order was cancelled or expired. Refresh checkout to create a new order.");
+      }
+      // Proof, zero-balance, and already-paid retries require no gateway charge.
+      if (paymentMethod !== "online" || Number(placedOrder.totalAmount) <= 0 || placedOrder.paymentStatus === "PAID") {
         clearCart();
         setConfirmedOrder({
           id: placedOrder.id,
@@ -512,8 +524,8 @@ export default function CheckoutPage() {
           total: Number(placedOrder.totalAmount),
           itemsCount: items.reduce((acc, it) => acc + it.quantity, 0),
           shippingMethod: deliveryOption,
-          paymentMethod: paymentMethod === "online" ? "100%_DISCOUNT" : "PAY_AFTER_PROOF",
-          paymentStatus: Number(placedOrder.totalAmount) <= 0 ? "PAID" : "UNPAID",
+          paymentMethod: paymentMethod === "online" ? (Number(placedOrder.totalAmount) === 0 ? "100%_DISCOUNT" : "ONLINE") : "PAY_AFTER_PROOF",
+          paymentStatus: placedOrder.paymentStatus,
         });
         setCurrentStep(4);
         setIsSubmitting(false);
@@ -1490,11 +1502,13 @@ export default function CheckoutPage() {
                     </div>
                   </div>
 
+                  {quoteLoading && <p role="status" className="text-sm text-text-secondary">Confirming current prices…</p>}
+                  {quoteError && <p role="alert" className="text-sm text-red-500">{quoteError} Update your cart or coupon, or reload to retry.</p>}
                   {/* Primary Call to Action Button */}
                   <div className="pt-2 space-y-2">
                     <button
                       type="button"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || quoteLoading || !serverQuote || Boolean(quoteError)}
                       onClick={handleProceedClick}
                       className="w-full h-12 rounded-2xl bg-brand-indigo hover:bg-brand-indigo/90 active:scale-[0.99] text-white font-bold text-sm sm:text-base flex items-center justify-center gap-2 shadow-lg shadow-brand-indigo/25 transition-all cursor-pointer disabled:opacity-50"
                     >

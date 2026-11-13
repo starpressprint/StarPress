@@ -175,7 +175,7 @@ export default function ImageUploader({
         }
       }
     },
-    [images, onChange, bucket, folder, entityId, maxImages]
+    [images, onChange, bucket, folder, entityId, maxImages, maxSizeMB]
   );
 
   // ---- File Selection ----

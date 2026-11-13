@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
       sessionUserId: user?.id,
       sessionUserEmail: user?.email,
       isAdmin,
+      sessionEmailVerified: Boolean(user?.email_confirmed_at),
     });
 
     await auditPaymentEvent({

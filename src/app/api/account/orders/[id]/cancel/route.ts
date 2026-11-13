@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { getSessionUser } from "@/lib/supabase/server";
+import { resolveUser } from "@/lib/auth-resolver";
+import { isOrderOwner } from "@/lib/order-access";
 import { db } from "@/lib/db";
 import { updateOrderStatus } from "@/server/orders";
-import { persistentStore } from "@/server/storage";
 import { rateLimitDistributed, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -19,32 +17,7 @@ export async function POST(
       return NextResponse.json({ error: "Order ID is required." }, { status: 400 });
     }
 
-    let user = (await getSessionUser()) || (await getServerSession(authOptions))?.user;
-
-    if (!user) {
-      const authHeader = request.headers.get("authorization");
-      if (authHeader?.startsWith("Bearer ")) {
-        const token = authHeader.split(" ")[1];
-        const { createServerClient } = await import("@supabase/ssr");
-        const supabase = createServerClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder-project.supabase.co",
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder.placeholder",
-          { cookies: { getAll: () => [], setAll: () => {} } }
-        );
-        const { data } = await supabase.auth.getUser(token);
-        if (data?.user) {
-          user = {
-            id: data.user.id,
-            email: data.user.email || "",
-            name: data.user.user_metadata?.name || "Customer",
-            phone: data.user.phone || data.user.user_metadata?.phone || null,
-            role: data.user.app_metadata?.role || "CUSTOMER",
-            app_metadata: data.user.app_metadata || {},
-            email_confirmed_at: data.user.email_confirmed_at,
-          } as any;
-        }
-      }
-    }
+    const user = await resolveUser(request);
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized. Please sign in." }, { status: 401 });
@@ -62,26 +35,16 @@ export async function POST(
 
     const reason = (body?.reason || "Customer requested cancellation").trim();
 
-    // Look up order in DB
-    let order: any = null;
-    try {
-      order = await db.order.findFirst({
-        where: {
-          OR: [{ id: orderId }, { orderNumber: orderId }],
-        },
-      });
-    } catch {}
-
-    if (!order) {
-      order = persistentStore.getOrderById(orderId);
-    }
+    const order = await db.order.findFirst({
+      where: { OR: [{ id: orderId }, { orderNumber: orderId }] },
+    });
 
     if (!order) {
       return NextResponse.json({ error: "Order not found." }, { status: 404 });
     }
 
     // Verify ownership
-    if (order.userId && order.userId !== user.id && (order.guestEmail || "").toLowerCase() !== (user.email || "").toLowerCase()) {
+    if (!isOrderOwner(order, user)) {
       return NextResponse.json({ error: "Unauthorized to cancel this order." }, { status: 403 });
     }
 
@@ -104,6 +67,7 @@ export async function POST(
     // Execute cancellation with atomic inventory restock
     const result = await updateOrderStatus(order.id, "CANCELLED", {
       notes: `[Customer Cancellation] ${reason}`,
+      customerCancellation: true,
     });
 
     if (!result.success) {

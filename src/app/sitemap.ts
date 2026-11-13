@@ -1,7 +1,10 @@
+import { CatalogProduct } from "@/lib/catalog";
 import { MetadataRoute } from "next";
-import { getAllCategories, getAllProducts } from "@/lib/catalog";
+import { getLiveCategories, getLiveCatalogProducts } from "@/server/products";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export const revalidate = 300;
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://starpress.in").replace(/\/$/, "");
   const now = new Date();
 
@@ -22,7 +25,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ];
 
   // Category filter pages
-  const categories = getAllCategories();
+  const categories = await getLiveCategories();
   const categoryRoutes: MetadataRoute.Sitemap = categories.map((cat) => ({
     url: `${baseUrl}/shop?category=${cat.slug}`,
     lastModified: now,
@@ -31,8 +34,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   }));
 
   // Dynamic product detail pages
-  const products = getAllProducts();
-  const productRoutes: MetadataRoute.Sitemap = products.map((prod) => ({
+  const products = await getLiveCatalogProducts();
+  const productRoutes: MetadataRoute.Sitemap = products.map((prod: CatalogProduct) => ({
     url: `${baseUrl}/shop/${prod.slug}`,
     lastModified: now,
     changeFrequency: "weekly",

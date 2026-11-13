@@ -61,9 +61,6 @@ export const metadata: Metadata = {
   authors: [{ name: "Star Press", url: "https://www.starpress.in" }],
   creator: "Star Press",
   publisher: "Star Press",
-  alternates: {
-    canonical: "/",
-  },
   icons: {
     icon: [
       { url: "/images/Logo.png", type: "image/png" },
@@ -99,7 +96,7 @@ export const metadata: Metadata = {
     creator: "@starpress",
   },
   verification: {
-    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || "google-site-verification-token",
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined,
   },
   robots: {
     index: true,

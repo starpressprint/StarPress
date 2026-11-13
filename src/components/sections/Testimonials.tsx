@@ -6,6 +6,7 @@ import Link from "next/link";
 
 export default async function Testimonials() {
   let reviews: any[] = [];
+  let loadFailed = false;
   try {
     reviews = await db.review.findMany({
       take: 6,
@@ -16,50 +17,19 @@ export default async function Testimonials() {
       },
     });
   } catch (e) {
+    loadFailed = true;
     reviews = [];
   }
 
-  // Fallback to real verified customer orders feedback if no public reviews submitted yet
-  const displayItems =
-    reviews.length > 0
-      ? reviews.map((r) => ({
-          id: r.id,
-          name: r.user?.name || "Verified Customer",
-          role: "Verified Buyer",
-          rating: r.rating,
-          quote: r.comment || "High-precision print output, delivered on schedule with premium quality packaging.",
-          productName: r.product?.name,
-          productSlug: r.product?.slug,
-        }))
-      : [
-          {
-            id: "fb-1",
-            name: "Dr. Alok Joshi",
-            role: "Clinic Director, Khatima",
-            rating: 5,
-            quote: "Ordered our official letterheads and prescription pads. The paper quality and crisp gold foil logo impressed our entire staff.",
-            productName: "Executive Corporate Letterheads",
-            productSlug: "letterheads",
-          },
-          {
-            id: "fb-2",
-            name: "Pooja Rawat",
-            role: "Event Planner, Uttarakhand",
-            rating: 5,
-            quote: "The personalized neon board and welcome standees for our banquet hall arrived securely packed and ready to mount. Superb craftsmanship!",
-            productName: "Custom Neon Glow Sign Boards",
-            productSlug: "neon-signs",
-          },
-          {
-            id: "fb-3",
-            name: "Harish Chandra",
-            role: "Retail Store Owner, Amoun",
-            rating: 5,
-            quote: "Star Press is our go-to print partner for vinyl flex banners and product packaging labels. Direct WhatsApp support makes design adjustments seamless.",
-            productName: "Heavy-Duty Outdoor Flex Banners",
-            productSlug: "flex-banners",
-          },
-        ];
+  const displayItems = reviews.map((r) => ({
+    id: r.id,
+    name: r.user?.name || "Customer",
+    role: "Customer",
+    rating: r.rating,
+    quote: r.comment || "",
+    productName: r.product?.name,
+    productSlug: r.product?.slug,
+  }));
 
   return (
     <section className="py-16 md:py-20">
@@ -68,7 +38,7 @@ export default async function Testimonials() {
           <div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-xs font-semibold mb-3">
               <CheckCircle2 size={13} />
-              <span>Verified Customer Feedback</span>
+              <span>Customer Feedback</span>
             </div>
             <h2 className="font-display font-bold text-2xl sm:text-3xl text-text-primary tracking-tight">
               What Our Clients Say
@@ -83,6 +53,11 @@ export default async function Testimonials() {
           </Link>
         </div>
 
+        {displayItems.length === 0 && (
+          <p className="text-sm text-text-secondary">
+            {loadFailed ? "Customer reviews are temporarily unavailable." : "No customer reviews yet."}
+          </p>
+        )}
         {/* Testimonial Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {displayItems.slice(0, 3).map((item) => {
@@ -103,7 +78,6 @@ export default async function Testimonials() {
                       </h3>
                       <p className="text-[11px] text-text-secondary flex items-center gap-1">
                         <span>{item.role}</span>
-                        <span className="text-emerald-400">&bull; Verified</span>
                       </p>
                     </div>
                   </div>
@@ -123,7 +97,7 @@ export default async function Testimonials() {
                       href={`/shop/${item.productSlug}`}
                       className="text-[11px] text-slate-400 hover:text-brand-yellow transition-colors truncate block"
                     >
-                      Ordered: <span className="font-medium text-slate-300">{item.productName}</span>
+                      Reviewed: <span className="font-medium text-slate-300">{item.productName}</span>
                     </Link>
                   </div>
                 )}

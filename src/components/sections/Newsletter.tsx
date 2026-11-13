@@ -7,8 +7,9 @@ export default function Newsletter() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError("Please enter a valid email address.");
@@ -16,7 +17,20 @@ export default function Newsletter() {
     }
 
     setError("");
-    setIsSubmitted(true);
+    setIsSubmitting(true);
+    try {
+      const response = await fetch("/api/inquiries/contact", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Newsletter subscriber", email: email.trim(),
+          subject: "Newsletter subscription request", message: "Please subscribe this email to Star Press product news and offers." }),
+      });
+      if (!response.ok) throw new Error("Could not save your request. Please try again.");
+      setIsSubmitted(true);
+    } catch {
+      setError("Could not save your request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -35,7 +49,7 @@ export default function Newsletter() {
 
               {isSubmitted ? (
                 <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm font-semibold max-w-md">
-                  🎉 Thanks for subscribing! Check your inbox for your 10% welcome coupon.
+                  Thanks! Your subscription request has been received.
                 </div>
               ) : (
                 <form
@@ -61,15 +75,16 @@ export default function Newsletter() {
                     variant="primary"
                     size="md"
                     type="submit"
+                    disabled={isSubmitting}
                     className="!px-6 !py-3 !text-sm font-bold shadow-md shrink-0"
                   >
-                    Subscribe
+                    {isSubmitting ? "Submitting…" : "Subscribe"}
                   </Button>
                 </form>
               )}
 
               {error && (
-                <p className="text-xs text-rose-400 font-medium">{error}</p>
+                <p role="alert" className="text-xs text-rose-400 font-medium">{error}</p>
               )}
             </div>
 

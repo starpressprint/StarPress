@@ -1,3 +1,4 @@
+import { orderRequestHash, assertSameOrderRequest, claimOrderCoupon, mergeOrderNotes } from "./order-integrity";
 import { db } from "@/lib/db";
 import { Prisma, OrderStatus } from "@prisma/client";
 import { env } from "@/lib/env";
@@ -78,11 +79,17 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
 
   // 2. Check Idempotency Key within 24 hours
   const idempKey = input.idempotencyKey?.trim();
+  if (idempKey && (!input.userId || !/^[a-zA-Z0-9_-]{1,128}$/.test(idempKey))) {
+    throw Object.assign(new Error("An authenticated user and valid idempotency key are required."), { statusCode: 400 });
+  }
+  const requestHash = orderRequestHash({
+    items: input.items, shippingAddress: input.shippingAddress, billingAddress: input.billingAddress,
+    shippingMethod: input.shippingMethod || "standard", couponCode: input.couponCode?.trim().toUpperCase() || "",
+    paymentMethod: normalizedPaymentMethod, notes: input.notes || "",
+  });
   if (idempKey) {
-    try {
       const existingOrder = await client.order.findFirst({
         where: {
-          paymentStatus: "UNPAID",
           createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
           notes: { contains: `[idempotency:${idempKey}]` },
           ...(input.userId ? { userId: input.userId } : {}),
@@ -91,12 +98,9 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
       });
 
       if (existingOrder) {
-        console.log(`[Order Idempotency] Returning existing unpaid order ${existingOrder.orderNumber} for key "${idempKey}"`);
+        assertSameOrderRequest(existingOrder.notes, requestHash);
         return { success: true, order: existingOrder, isExisting: true };
       }
-    } catch (e) {
-      console.warn("Idempotency lookup warning:", e);
-    }
   }
 
   // 3. Validate shipping address fields (server-side defense)
@@ -183,8 +187,8 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
 
   // 8. Build Metadata Notes
   const metadataNotes: string[] = [];
-  if (input.notes?.trim()) metadataNotes.push(input.notes.trim());
-  if (idempKey) metadataNotes.push(`[idempotency:${idempKey}]`);
+  if (input.notes?.trim()) metadataNotes.push(mergeOrderNotes(null, input.notes) || "");
+  if (idempKey) metadataNotes.push(`[idempotency:${idempKey}]`, `[request:${requestHash}]`);
   if (quote.couponApplied) metadataNotes.push(`[coupon:${quote.couponApplied.code}]`);
   if (missingArtwork) metadataNotes.push("[PENDING_ARTWORK_UPLOAD]");
   const finalNotes = metadataNotes.length > 0 ? metadataNotes.join(" ") : null;
@@ -194,6 +198,7 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
   // 9. Atomic DB Persistence with stock decrement (Fail closed on DB failure)
   // Retry up to 3 times on orderNumber unique constraint collision
   let order: any = null;
+  let isExisting = false;
   let retries = 0;
   const MAX_RETRIES = 3;
 
@@ -201,6 +206,21 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
     try {
       const currentOrderNumber = retries === 0 ? orderNumber : generateOrderNumber();
       order = await client.$transaction(async (tx) => {
+        if (idempKey) {
+          const lockKey = `checkout:${input.userId}:${idempKey}`;
+          await tx.$queryRaw`SELECT 1 AS locked FROM pg_advisory_xact_lock(hashtext(${lockKey}))`;
+          const existing = await tx.order.findFirst({
+            where: { userId: validUserId || input.userId, notes: { contains: `[idempotency:${idempKey}]` },
+              createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+            include: { items: true },
+          });
+          if (existing) {
+            assertSameOrderRequest(existing.notes, requestHash);
+            isExisting = true;
+            return existing;
+          }
+        }
+        await claimOrderCoupon(tx, quote, quote.grandTotal === 0 ? "PAY_AFTER_PROOF" : normalizedPaymentMethod);
         const created = await tx.order.create({
           data: {
             orderNumber: currentOrderNumber,
@@ -208,7 +228,7 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
         guestEmail: input.guestEmail || input.shippingAddress.email,
         guestPhone: input.guestPhone || input.shippingAddress.phone,
         guestName: input.guestName || input.shippingAddress.fullName,
-        status: OrderStatus.PENDING,
+        status: quote.grandTotal === 0 ? OrderStatus.CONFIRMED : OrderStatus.PENDING,
         subtotal: quote.subtotal,
         gstAmount: quote.gst,
         shippingFee: quote.shipping,
@@ -219,9 +239,9 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
           ? (input.billingAddress as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull,
         paymentMethod: normalizedPaymentMethod,
-        paymentStatus: "UNPAID",
+        paymentStatus: quote.grandTotal === 0 ? "PAID" : "UNPAID",
         paymentExpiresAt:
-          normalizedPaymentMethod === "ONLINE"
+          normalizedPaymentMethod === "ONLINE" && quote.grandTotal > 0
             ? new Date(
                 Date.now() +
                   Number(
@@ -319,17 +339,9 @@ export async function createOrder(input: CreateOrderInput, client: typeof db = d
     throw err;
   }
 
-    // If order was placed under PAY_AFTER_PROOF, increment coupon usage now (since no online gateway capture)
-    if (normalizedPaymentMethod === "PAY_AFTER_PROOF" && quote.couponApplied) {
-      try {
-        await client.discount.updateMany({
-          where: { code: quote.couponApplied.code.toUpperCase() },
-          data: { usedCount: { increment: 1 } },
-        });
-      } catch (dErr) {
-        console.warn("Could not increment coupon usedCount for proof order:", dErr);
-      }
+    if (isExisting) return { success: true, order, isExisting: true };
 
+    if (normalizedPaymentMethod === "PAY_AFTER_PROOF") {
       // Send Order Placed / Proof email asynchronously
       sendOrderPlacedProofEmail({
         orderNumber: order.orderNumber,
@@ -414,40 +426,23 @@ export async function getOrderById(idOrNumber: string) {
 }
 
 export async function trackOrder(orderNumber: string, phoneOrEmail: string) {
+  if (typeof orderNumber !== "string" || typeof phoneOrEmail !== "string") return null;
   const normalizedInput = phoneOrEmail.trim().toLowerCase();
   const normalizedOrderNumber = orderNumber.trim().toUpperCase();
-
-  try {
-    const order = await db.order.findFirst({
-      where: {
-        orderNumber: normalizedOrderNumber,
-        OR: [
-          { guestEmail: { equals: normalizedInput, mode: "insensitive" } },
-          { guestPhone: { contains: normalizedInput } },
-        ],
-      },
-      include: {
-        items: true,
-      },
-    });
-    if (order) return order;
-  } catch (error) {
-    console.warn("trackOrder database error:", error);
-  }
-
-  try {
-    const local = persistentStore.getOrderById(normalizedOrderNumber);
-    if (local) {
-      const email = (local.guestEmail || "").toLowerCase();
-      const phone = (local.guestPhone || "").replace(/\D/g, "");
-      const cleanInput = normalizedInput.replace(/\D/g, "");
-      if (email === normalizedInput || (cleanInput && phone.includes(cleanInput))) {
-        return local;
-      }
-    }
-  } catch {}
-
-  return null;
+  const normalizePhone = (value: string) => {
+    const digits = value.replace(/\D/g, "");
+    return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits;
+  };
+  const phone = normalizePhone(normalizedInput);
+  if (!normalizedOrderNumber || !normalizedInput ||
+      (!normalizedInput.includes("@") && !/^\d{10}$/.test(phone))) return null;
+  const order = await db.order.findUnique({
+    where: { orderNumber: normalizedOrderNumber }, include: { items: true },
+  });
+  if (!order) return null;
+  const emailMatches = Boolean(order.guestEmail && order.guestEmail.trim().toLowerCase() === normalizedInput);
+  const phoneMatches = /^\d{10}$/.test(phone) && normalizePhone(order.guestPhone || "") === phone;
+  return emailMatches || phoneMatches ? order : null;
 }
 
 export async function getOrderStats() {
@@ -635,48 +630,7 @@ export async function listOrders(options?: {
     const key = (o.orderNumber || o.id || "").toUpperCase().trim();
     if (key) {
       combinedMap.set(key, o);
-      // Ensure real DB order is also mirrored in persistentStore for offline backup
-      try {
-        persistentStore.saveOrder({
-          id: o.id,
-          orderNumber: o.orderNumber,
-          userId: o.userId,
-          guestEmail: o.guestEmail,
-          guestPhone: o.guestPhone,
-          guestName: o.guestName,
-          status: o.status,
-          subtotal: Number(o.subtotal || 0),
-          gstAmount: o.gstAmount ? Number(o.gstAmount) : null,
-          shippingFee: Number(o.shippingFee || 0),
-          discountAmount: Number(o.discountAmount || 0),
-          totalAmount: Number(o.totalAmount || 0),
-          shippingAddress: o.shippingAddress,
-          billingAddress: o.billingAddress,
-          paymentMethod: o.paymentMethod || "ONLINE",
-          paymentStatus: o.paymentStatus || "UNPAID",
-          paymentId: o.paymentId,
-          trackingNumber: o.trackingNumber,
-          courierPartner: o.courierPartner,
-          notes: o.notes,
-          items: Array.isArray(o.items)
-            ? o.items.map((it: any) => ({
-                id: it.id,
-                productId: it.productId,
-                productName: it.productName,
-                productSlug: it.productSlug,
-                quantity: it.quantity,
-                unitPrice: Number(it.unitPrice || 0),
-                lineTotal: Number(it.lineTotal || 0),
-                specs: it.specs,
-                customText: it.customText,
-                artworkUrl: it.artworkUrl,
-                previewUrl: it.previewUrl,
-              }))
-            : [],
-          createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
-          updatedAt: o.updatedAt ? new Date(o.updatedAt).toISOString() : new Date().toISOString(),
-        });
-      } catch {}
+
     }
   }
 
@@ -756,33 +710,42 @@ export async function listOrders(options?: {
 export async function updateOrderStatus(
   id: string,
   status: string,
-  tracking?: { trackingNumber?: string; courierPartner?: string; notes?: string },
+  tracking?: { trackingNumber?: string; courierPartner?: string; notes?: string; customerCancellation?: boolean },
   client: typeof db = db
 ) {
   let normalizedStatus = status.toUpperCase();
   if (normalizedStatus === "SHIPPED") normalizedStatus = "DISPATCHED";
   if (normalizedStatus === "PROCESSING") normalizedStatus = "IN_PRODUCTION";
 
-  // Always mirror to persistentStore
-  try {
-    persistentStore.updateOrderStatus(id, normalizedStatus, tracking);
-  } catch (e) {
-    console.warn("persistentStore updateOrderStatus error:", e);
-  }
-
   try {
     const result = await client.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${id} FOR UPDATE`;
       const existing = await tx.order.findUnique({ where: { id }, include: { items: true } });
       if (!existing) {
-        // If not found in DB, check persistentStore
-        const local = persistentStore.getOrderById(id);
-        if (local) {
-          return { success: true as const, order: local };
-        }
         return { success: false as const, error: "Order not found" };
       }
 
+      if (tracking?.customerCancellation && !["PENDING", "CONFIRMED", "CANCELLED"].includes(existing.status)) {
+        return { success: false as const, error: "This order is already in production or dispatched. Please contact support." };
+      }
+      if (existing.status === OrderStatus.CANCELLED && normalizedStatus !== "CANCELLED" && existing.stockRestoredAt) {
+        for (const item of [...existing.items].sort((a, b) => (a.productId || "").localeCompare(b.productId || ""))) {
+          if (!item.productId) continue;
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product?.trackInventory) continue;
+          const allocated = await tx.product.updateMany({
+            where: { id: product.id, trackInventory: true, stockQuantity: { gte: item.quantity } },
+            data: { stockQuantity: { decrement: item.quantity } },
+          });
+          if (!allocated.count) throw new Error("Insufficient stock to reopen this cancelled order.");
+        }
+        await tx.order.update({ where: { id }, data: {
+          stockRestoredAt: null,
+          ...(existing.paymentStatus === "EXPIRED" ? { paymentStatus: "UNPAID",
+            paymentExpiresAt: new Date(Date.now() + Number(env.ORDER_PAYMENT_WINDOW_MINUTES || 60) * 60000) } : {}),
+        } });
+      }
+      const preservedNotes = mergeOrderNotes(existing.notes, tracking?.notes);
       const targetStatus = normalizedStatus as OrderStatus;
       const isNowCancelled = targetStatus === OrderStatus.CANCELLED;
       const now = new Date();
@@ -796,7 +759,7 @@ export async function updateOrderStatus(
             stockRestoredAt: now,
             ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
             ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
-            ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+            ...(preservedNotes !== undefined ? { notes: preservedNotes } : {}),
           },
         });
 
@@ -816,7 +779,7 @@ export async function updateOrderStatus(
               status: targetStatus,
               ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
               ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
-              ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+              ...(preservedNotes !== undefined ? { notes: preservedNotes } : {}),
             },
           });
         }
@@ -827,7 +790,7 @@ export async function updateOrderStatus(
             status: targetStatus,
             ...(tracking?.trackingNumber !== undefined ? { trackingNumber: tracking.trackingNumber } : {}),
             ...(tracking?.courierPartner !== undefined ? { courierPartner: tracking.courierPartner } : {}),
-            ...(tracking?.notes !== undefined ? { notes: tracking.notes } : {}),
+            ...(preservedNotes !== undefined ? { notes: preservedNotes } : {}),
           },
         });
       }
@@ -842,12 +805,7 @@ export async function updateOrderStatus(
     invalidateCatalogCache();
     return result;
   } catch (error) {
-    // If DB transaction failed, return local order if available
-    const local = persistentStore.getOrderById(id);
-    if (local) {
-      return { success: true, order: local };
-    }
-    return { success: false, error: (error as Error).message };
+    return { success: false as const, error: (error as Error).message };
   }
 }
 
@@ -890,6 +848,11 @@ export async function createAdminOrder(
   adminEmail: string,
   ipAddress?: string
 ) {
+  if (!Array.isArray(data.items) || !data.items.length || data.items.length > 100 || data.items.some(item =>
+      !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || !Number.isFinite(item.unitPrice) || item.unitPrice < 0 ||
+      (item.lineTotal !== undefined && (!Number.isFinite(item.lineTotal) || item.lineTotal < 0)))) {
+    throw Object.assign(new Error("Valid positive quantities and non-negative prices are required."), { statusCode: 400 });
+  }
   const orderNumber = generateOrderNumber();
   const customerName = data.customerName.trim();
   const customerPhone = data.customerPhone.trim();
@@ -934,7 +897,20 @@ export async function createAdminOrder(
   let createdDbOrder: any = null;
 
   try {
-    createdDbOrder = await db.order.create({
+    createdDbOrder = await db.$transaction(async (tx) => {
+      if (normalizedStatus !== "CANCELLED") {
+        for (const item of [...cleanItems].sort((a, b) => (a.productId || "").localeCompare(b.productId || ""))) {
+          if (!item.productId) continue;
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product?.trackInventory) continue;
+          const allocated = await tx.product.updateMany({
+            where: { id: product.id, trackInventory: true, stockQuantity: { gte: item.quantity } },
+            data: { stockQuantity: { decrement: item.quantity } },
+          });
+          if (!allocated.count) throw Object.assign(new Error(`Insufficient stock for "${item.productName}".`), { statusCode: 409 });
+        }
+      }
+      return tx.order.create({
       data: {
         orderNumber,
         guestName: customerName,
@@ -945,6 +921,7 @@ export async function createAdminOrder(
         paymentMethod: normalizedPaymentMethod,
         paymentStatus: normalizedPaymentStatus,
         status: normalizedStatus as any,
+        stockRestoredAt: normalizedStatus === "CANCELLED" ? new Date() : null,
         subtotal,
         shippingFee,
         discountAmount,
@@ -965,9 +942,13 @@ export async function createAdminOrder(
       include: {
         items: true,
       },
+      });
     });
+    invalidateCatalogCache();
   } catch (dbErr) {
     console.error("[createAdminOrder] Database order creation error:", dbErr);
+    if ((dbErr as { statusCode?: number }).statusCode === 409) throw dbErr;
+    throw new Error("Order could not be saved. Please retry.");
   }
 
   const orderId = createdDbOrder?.id || `ord_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`;

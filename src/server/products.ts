@@ -780,6 +780,7 @@ export async function updateAdminProduct(
   let updatedProduct: any = null;
 
   try {
+    await db.$transaction(async (tx) => {
     // 1. Locate product in DB (by CUID, by slug, or by catalog ID)
     const catalogProd = getAllProducts().find((p) => p.id === id || p.slug === id);
     const candidateSlugs = [id];
@@ -790,7 +791,7 @@ export async function updateAdminProduct(
       candidateSlugs.push(catalogProd.slug);
     }
 
-    let targetProduct = await db.product.findFirst({
+    let targetProduct = await tx.product.findFirst({
       where: {
         OR: [
           { id },
@@ -807,21 +808,21 @@ export async function updateAdminProduct(
     // 2. Resolve categoryId if provided
     let resolvedCategoryId: string | undefined = undefined;
     if (data.categoryId) {
-      const catById = await db.category.findUnique({
+      const catById = await tx.category.findUnique({
         where: { id: data.categoryId },
-      }).catch(() => null);
+      });
 
       if (catById) {
         resolvedCategoryId = catById.id;
       } else {
-        const catBySlug = await db.category.findFirst({
+        const catBySlug = await tx.category.findFirst({
           where: {
             OR: [
               { slug: data.categoryId },
               { name: data.categoryId },
             ],
           },
-        }).catch(() => null);
+        });
 
         if (catBySlug) {
           resolvedCategoryId = catBySlug.id;
@@ -833,7 +834,7 @@ export async function updateAdminProduct(
           const catName = matchedCat ? matchedCat.name : data.categoryId;
 
           try {
-            const upsertedCat = await db.category.upsert({
+            const upsertedCat = await tx.category.upsert({
               where: { slug: catSlug },
               update: {},
               create: {
@@ -844,7 +845,7 @@ export async function updateAdminProduct(
             });
             resolvedCategoryId = upsertedCat.id;
           } catch (catErr) {
-            console.warn("[Update Product] Category upsert warning:", catErr);
+            throw catErr;
           }
         }
       }
@@ -873,7 +874,7 @@ export async function updateAdminProduct(
 
     // 4. Update or Create in DB
     if (targetProduct) {
-      updatedProduct = await db.product.update({
+      updatedProduct = await tx.product.update({
         where: { id: targetProduct.id },
         data: prismaData,
         include: {
@@ -883,9 +884,9 @@ export async function updateAdminProduct(
       });
       console.log(`[Update Product] Updated "${updatedProduct.name}" (${updatedProduct.id}) in database.`);
     } else {
-      const fallbackCat = resolvedCategoryId || (await db.category.findFirst())?.id || "business-printing";
+      const fallbackCat = resolvedCategoryId || (await tx.category.findFirst())?.id || "business-printing";
       const slug = prismaData.slug || slugify(prismaData.name || id);
-      updatedProduct = await db.product.create({
+      updatedProduct = await tx.product.create({
         data: {
           name: prismaData.name || (catalogProd?.name ?? "Custom Product"),
           slug,
@@ -917,32 +918,14 @@ export async function updateAdminProduct(
     const imagesToSync = data.images;
     if (Array.isArray(imagesToSync) && updatedProduct) {
       try {
-        // Find existing images to detect which ones were removed
-        const existingImages = await db.productImage.findMany({
-          where: { productId: updatedProduct.id },
-        });
-
-        const newUrls = new Set(
-          imagesToSync
-            .map((img: any) => (typeof img === "object" && img.url ? img.url : String(img)).trim())
-            .filter(Boolean)
-        );
-
-        // Delete removed images from Supabase Storage
-        const removedImages = existingImages.filter((img) => !newUrls.has(img.url.trim()));
-        for (const rem of removedImages) {
-          if (rem.url) {
-            await deleteStorageImage(rem.url, BUCKETS.PRODUCT_IMAGES);
-          }
-        }
-
+        // Retain detached storage objects for audited garbage collection.
         // Wipe old DB product images and insert new ones
-        await db.productImage.deleteMany({
+        await tx.productImage.deleteMany({
           where: { productId: updatedProduct.id },
         });
 
         if (imagesToSync.length > 0) {
-          await db.productImage.createMany({
+          await tx.productImage.createMany({
             data: imagesToSync.map((img: any, idx: number) => ({
               productId: updatedProduct.id,
               url: typeof img === "object" && img.url ? img.url : String(img),
@@ -955,7 +938,7 @@ export async function updateAdminProduct(
         }
 
         // Re-fetch product with newly synced images
-        updatedProduct = await db.product.findUnique({
+        updatedProduct = await tx.product.findUnique({
           where: { id: updatedProduct.id },
           include: {
             category: true,
@@ -963,7 +946,7 @@ export async function updateAdminProduct(
           },
         });
       } catch (imgErr: any) {
-        console.error("[Update Product] Image sync error:", imgErr?.message);
+        throw imgErr;
       }
     }
 
@@ -971,7 +954,7 @@ export async function updateAdminProduct(
     // 6. Audit log
     if (updatedProduct) {
       try {
-        await db.adminAuditLog.create({
+        await tx.adminAuditLog.create({
           data: {
             adminEmail,
             entityType: "product",
@@ -982,11 +965,13 @@ export async function updateAdminProduct(
           },
         });
       } catch (auditErr) {
-        console.warn("[Update Product] Audit log creation warning:", auditErr);
+        throw auditErr;
       }
     }
+    });
   } catch (err: any) {
     console.error("[Update Product] Database update failed:", err?.message || err);
+    throw new Error("Product could not be saved. Please retry.");
   }
 
   // 7. Resilient sync to persistentStore
@@ -1015,67 +1000,8 @@ export async function updateAdminProduct(
  * Delete a product and log audit action
  */
 export async function deleteAdminProduct(id: string, adminEmail: string, ipAddress?: string) {
-  try {
-    const catalogProd = getAllProducts().find((p) => p.id === id || p.slug === id);
-    const candidateSlugs = [id];
-    if (id.startsWith("prod-")) candidateSlugs.push(id.replace(/^prod-/, ""));
-    if (catalogProd) candidateSlugs.push(catalogProd.slug);
-
-    const targetProduct = await db.product.findFirst({
-      where: {
-        OR: [
-          { id },
-          ...candidateSlugs.map((s) => ({ slug: s })),
-          ...(catalogProd ? [{ id: catalogProd.id }] : []),
-        ],
-      },
-      include: {
-        images: true,
-      },
-    });
-
-    if (targetProduct) {
-      // 1. Delete all associated images from Supabase Storage
-      if (targetProduct.images && targetProduct.images.length > 0) {
-        for (const img of targetProduct.images) {
-          if (img.url) {
-            await deleteStorageImage(img.url, BUCKETS.PRODUCT_IMAGES);
-          }
-        }
-      }
-
-      // 2. Delete product images from DB first
-      await db.productImage.deleteMany({
-        where: { productId: targetProduct.id },
-      }).catch(() => {});
-
-      // 3. Delete product from DB
-      await db.product.delete({
-        where: { id: targetProduct.id },
-      });
-
-      try {
-        await db.adminAuditLog.create({
-          data: {
-            adminEmail,
-            entityType: "product",
-            entityId: targetProduct.id,
-            action: "delete",
-            changes: { deletedId: targetProduct.id, name: targetProduct.name },
-            ipAddress: ipAddress || null,
-          },
-        });
-      } catch {}
-    }
-  } catch (err: any) {
-    console.warn("[Delete Product] DB delete bypassed:", (err as any)?.message);
-  }
-
-  persistentStore.deleteCustomProduct(id);
-  persistentStore.saveProductOverride(id, { status: "archived" });
-  invalidateCatalogCache();
-
-  return { success: true };
+  // Archive durably: historical order references and artwork must remain intact.
+  return updateAdminProduct(id, { status: "archived" }, adminEmail, ipAddress);
 }
 
 
@@ -1113,8 +1039,9 @@ export async function bulkUpdateProductStatus(ids: string[], status: string) {
     });
     invalidateCatalogCache();
     return res.count;
-  } catch {
-    return ids.length;
+  } catch (error) {
+    console.error("Bulk product status update failed:", error);
+    throw new Error("Product statuses could not be saved. Please retry.");
   }
 }
 

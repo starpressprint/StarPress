@@ -1,3 +1,4 @@
+import { quoteInputSchema } from "../lib/validation/commerce";
 import { db } from "../lib/db";
 import { calculateProductPrice, PriceBreakdown } from "../lib/pricing";
 import { getProductBySlug, CATALOG_PRODUCTS, CatalogProduct } from "../lib/catalog";
@@ -109,7 +110,7 @@ export async function resolveProductConfig(
       });
     }
   } catch {
-    // DB offline or unreachable, will fall back to static catalog
+    throw Object.assign(new Error("Catalog service is temporarily unavailable. Please retry."), { statusCode: 503 });
   }
 
   if (dbProduct) {
@@ -186,14 +187,15 @@ export async function resolveProductConfig(
  */
 export async function validateCouponForQuote(
   code: string,
-  subtotal: number
+  subtotal: number,
+  client: typeof db = db
 ): Promise<CouponDiscountResult | null> {
   const normalizedCode = code.trim().toUpperCase().replace(/\s+/g, "");
   if (!normalizedCode) return null;
 
   // 1. Check DB first
   try {
-    const discount = await db.discount.findUnique({
+    const discount = await client.discount.findUnique({
       where: { code: normalizedCode },
     });
 
@@ -233,7 +235,7 @@ export async function validateCouponForQuote(
       const val = Number(discount.value);
       const discountAmount =
         discount.type === "percentage"
-          ? Math.round((subtotal * val) / 100)
+          ? Math.min(subtotal, Math.max(0, Math.round((subtotal * val) / 100)))
           : Math.min(val, subtotal);
 
       return {
@@ -245,33 +247,7 @@ export async function validateCouponForQuote(
     }
   } catch (error: any) {
     if (error?.statusCode === 400) throw error;
-    // Fall back to built-in coupons if DB is offline
-  }
-
-  // 2. Built-in promotional coupons fallback
-  if (normalizedCode === "STAR10") {
-    const discountAmount = Math.round((subtotal * 10) / 100);
-    return {
-      code: "STAR10",
-      type: "percentage",
-      value: 10,
-      discountAmount,
-    };
-  }
-
-  if (normalizedCode === "PRESS20") {
-    if (subtotal < 1500) {
-      const err = new Error("Code PRESS20 requires a minimum order amount of ₹1,500.");
-      (err as any).statusCode = 400;
-      throw err;
-    }
-    const discountAmount = Math.round((subtotal * 20) / 100);
-    return {
-      code: "PRESS20",
-      type: "percentage",
-      value: 20,
-      discountAmount,
-    };
+    throw Object.assign(new Error("Coupon service is temporarily unavailable. Please retry."), { statusCode: 503 });
   }
 
   const err = new Error(`Invalid discount code "${code}".`);
@@ -287,7 +263,12 @@ export async function quoteOrder(
   input: QuoteOrderInput,
   client: typeof db = db
 ): Promise<QuoteOrderResult> {
-  if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
+  const parsed = quoteInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw Object.assign(new Error(parsed.error.issues[0]?.message || "Invalid quote input."), { statusCode: 400 });
+  }
+  input = parsed.data;
+  if (!input.items || !Array.isArray(input.items) || input.items.length === 0 || input.items.length > 100) {
     const err = new Error("At least one line item is required for a quote.");
     (err as any).statusCode = 400;
     throw err;
@@ -297,8 +278,8 @@ export async function quoteOrder(
   let subtotal = 0;
 
   for (const item of input.items) {
-    const quantity = Math.floor(Number(item.quantity));
-    if (!Number.isFinite(quantity) || quantity <= 0) {
+    const quantity = Number(item.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 1000000) {
       const err = new Error(`Quantity must be a positive integer greater than zero. Received: ${item.quantity}`);
       (err as any).statusCode = 400;
       throw err;
@@ -313,6 +294,10 @@ export async function quoteOrder(
         client
       );
 
+    if ((item.sizeId && !config.sizeOptions.some((option) => option.id === item.sizeId)) ||
+        (item.materialId && !config.materialOptions.some((option) => option.id === item.materialId))) {
+      throw Object.assign(new Error("Selected product option is unavailable."), { statusCode: 400 });
+    }
     const priceBreakdown: PriceBreakdown = calculateProductPrice(config, {
       sizeId: item.sizeId,
       materialId: item.materialId,
@@ -359,7 +344,7 @@ export async function quoteOrder(
   let discountAmount = 0;
 
   if (input.couponCode?.trim()) {
-    const res = await validateCouponForQuote(input.couponCode, subtotal);
+    const res = await validateCouponForQuote(input.couponCode, subtotal, client);
     if (res) {
       couponApplied = res;
       discountAmount = res.discountAmount;

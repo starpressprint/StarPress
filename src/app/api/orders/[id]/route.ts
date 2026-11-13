@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrderById } from "@/server/orders";
-import { getSessionUser } from "@/lib/supabase/server";
+import { resolveUser } from "@/lib/auth-resolver";
+import { isOrderOwner } from "@/lib/order-access";
 import { isUserAdmin } from "@/lib/admin/is-admin";
 import { rateLimitDistributed, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 
@@ -15,7 +16,7 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const ip = getClientIp(request);
-    const user = await getSessionUser();
+    const user = await resolveUser(request);
 
     const rateLimitKey = user ? `orders:detail:${user.id}` : `orders:detail:${ip}`;
     const rl = await rateLimitDistributed(rateLimitKey, 30, 60);
@@ -37,9 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const isOwner =
-      order.userId === user.id ||
-      (order.guestEmail && user.email && order.guestEmail.toLowerCase().trim() === user.email.toLowerCase().trim());
+    const isOwner = isOrderOwner(order, user);
     const isAdmin = isUserAdmin(user) || user.role === "ADMIN";
 
     if (!isOwner && !isAdmin) {

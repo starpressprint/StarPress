@@ -76,6 +76,13 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 const STORAGE_KEY = "starpress_cart_v2";
 const LEGACY_STORAGE_KEY = "starpress_cart_v1";
+function validStoredItems(value: unknown): CartItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is CartItem => item && typeof item.id === "string" &&
+    typeof item.name === "string" && typeof item.href === "string" &&
+    typeof item.imageSrc === "string" && Number.isFinite(item.price) && item.price >= 0 &&
+    Number.isSafeInteger(item.quantity) && item.quantity > 0);
+}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
@@ -86,14 +93,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setItems(JSON.parse(stored));
+        setItems(validStoredItems(JSON.parse(stored)));
       } else {
         // Fallback to legacy key if exists
         const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
         if (legacy) {
           const parsedLegacy = JSON.parse(legacy);
           if (Array.isArray(parsedLegacy)) {
-            setItems(parsedLegacy);
+            setItems(validStoredItems(parsedLegacy));
           }
         } else {
           setItems([]);
@@ -119,7 +126,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const addItem = (product: AddItemInput, explicitQuantity?: number) => {
     const qty = explicitQuantity !== undefined ? explicitQuantity : product.quantity || 1;
-    if (qty <= 0) return;
+    if (!Number.isSafeInteger(qty) || qty <= 0) return;
 
     setItems((prev) => {
       const existingIndex = prev.findIndex((item) => item.id === product.id);
@@ -172,6 +179,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateQuantity = (id: string, quantity: number) => {
+    if (!Number.isSafeInteger(quantity)) return;
     if (quantity <= 0) {
       removeItem(id);
       return;

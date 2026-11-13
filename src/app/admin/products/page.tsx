@@ -110,8 +110,8 @@ export default function ProductsPage() {
       // Real-time catalog stats from database
       if ((result as any).stats) {
         setCatalogStats((result as any).stats);
-      } else if (result.total > 0 && catalogStats.total === 0) {
-        setCatalogStats((prev) => ({
+      } else if (result.total > 0) {
+        setCatalogStats((prev) => prev.total !== 0 ? prev : ({
           ...prev,
           total: result.total,
           published: result.data.filter((p) => p.status === 'published').length || result.total,

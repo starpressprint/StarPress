@@ -19,12 +19,6 @@ export default function JsonLd() {
         },
         "description":
           "Star Press is a premier custom printing service in Khatima, Uttarakhand specializing in business cards, flyers, banners, stickers, packaging, 3D letter signs, and corporate merchandise.",
-        "sameAs": [
-          "https://instagram.com",
-          "https://youtube.com",
-          "https://linkedin.com",
-          "https://twitter.com",
-        ],
         "contactPoint": {
           "@type": "ContactPoint",
           "telephone": "+91-74568-49955",

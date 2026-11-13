@@ -1,3 +1,4 @@
+import { productCreateSchema } from "@/lib/validation/admin-product";
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { verifyAdminAccess } from "@/lib/admin/auth-check";
@@ -65,8 +66,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
 
-    const body = await request.json();
-    if (!body.name || !body.basePrice) {
+    const parsed = productCreateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid product" }, { status: 400 });
+    const body = parsed.data;
+    if (!body.name || body.basePrice === undefined) {
       return NextResponse.json(
         { error: "Product name and base price are required." },
         { status: 400 }

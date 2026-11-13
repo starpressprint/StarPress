@@ -43,14 +43,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Update order status to PAID and CONFIRMED
-    const updatedOrder = await db.order.update({
-      where: { id: order.id },
-      data: {
-        paymentStatus: "PAID",
-        status: "CONFIRMED",
-      },
-      include: { items: true },
+    // Serialize against cancellation and preserve fulfillment progress.
+    const updatedOrder = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`;
+      const current = await tx.order.findUnique({ where: { id: order.id } });
+      if (!current || current.paymentMethod?.toUpperCase() === "ONLINE" || current.paymentStatus === "PAID") {
+        throw Object.assign(new Error("Order changed. Refresh before recording manual payment."), { statusCode: 409 });
+      }
+      return tx.order.update({
+        where: { id: current.id },
+        data: { paymentStatus: "PAID", status: current.status === "PENDING" ? "CONFIRMED" : current.status },
+        include: { items: true },
+      });
     });
 
     // Write audit log
@@ -84,7 +88,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error(`API /api/admin/orders/${params.id}/mark-paid error:`, error);
     return NextResponse.json(
       { error: error?.message || "Failed to mark order as paid." },
-      { status: 500 }
+      { status: error?.statusCode || 500 }
     );
   }
 }

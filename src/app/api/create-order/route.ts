@@ -11,16 +11,6 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const { keyId, keySecret } = getRazorpayCredentials();
-
-    if (!keyId || !keySecret) {
-      console.error("[Razorpay Error] API credentials are not configured on server.");
-      return NextResponse.json(
-        { error: "Razorpay credentials are not configured on the server." },
-        { status: 500 }
-      );
-    }
-
     // Authenticate user across Supabase, NextAuth, and Bearer tokens
     let user = null;
     try {
@@ -32,6 +22,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Authentication required to initiate payment. Please sign in." },
         { status: 401 }
+      );
+    }
+
+    const { keyId, keySecret } = getRazorpayCredentials();
+
+    if (!keyId || !keySecret) {
+      console.error("[Razorpay Error] API credentials are not configured on server.");
+      return NextResponse.json(
+        { error: "Razorpay credentials are not configured on the server." },
+        { status: 500 }
       );
     }
 
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       sessionUserId: user.id,
       sessionUserEmail: user.email,
       isAdmin,
+      sessionEmailVerified: Boolean(user?.email_confirmed_at),
     });
 
     return NextResponse.json({

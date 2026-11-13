@@ -87,6 +87,13 @@ async function main() {
   const replay = await processWebhookRefund(input("rfnd-1", 3.33), prisma as any);
   if (!replay.skipped) throw new Error("Replay should be skipped by production handler logic");
 
+  const delayed = await processWebhookRefund({ ...input("rfnd-1", 3.33), status: "initiated" }, prisma as any);
+  if (!delayed.skipped || prisma.refunds.get("refund-1")?.status !== "processed") throw new Error("Delayed event regressed a processed refund");
+  for (const changed of [{ orderId: "other-order" }, { amount: 4 }, { paymentId: "other-payment" }]) {
+    let rejected = false;
+    try { await processWebhookRefund({ ...input("rfnd-1", 3.33), ...changed }, prisma as any); } catch { rejected = true; }
+    if (!rejected) throw new Error("Refund binding mismatch was accepted");
+  }
   await Promise.all([
     processWebhookRefund(input("rfnd-2", 300.01), prisma as any),
     processWebhookRefund(input("rfnd-3", 450.02), prisma as any),

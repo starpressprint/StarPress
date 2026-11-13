@@ -1,3 +1,4 @@
+import { mergeOrderNotes } from "@/server/order-integrity";
 // =============================================================================
 // GET & PATCH /api/admin/orders/[id]
 // Retrieve full order details and update order metadata (notes, tracking, status)
@@ -137,18 +138,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         refunded: OrderStatus.CANCELLED,
       };
 
-      const targetStatus = statusMap[status.toLowerCase()] || OrderStatus.PENDING;
-      await updateOrderStatus(params.id, targetStatus, {
+      const targetStatus = statusMap[status.toLowerCase()];
+      if (!targetStatus) return NextResponse.json({ error: "Invalid order status." }, { status: 400 });
+      const result = await updateOrderStatus(params.id, targetStatus, {
         trackingNumber,
         courierPartner,
         notes,
       });
+      if (!result.success) return NextResponse.json({ error: result.error }, { status: 409 });
     }
 
     // Direct DB update for fields like paymentStatus and notes
     try {
       const updateData: any = {};
-      if (notes !== undefined) updateData.notes = notes;
+      if (notes !== undefined) {
+        const current = await db.order.findUnique({ where: { id: params.id }, select: { notes: true } });
+        updateData.notes = mergeOrderNotes(current?.notes || null, notes);
+      }
       if (trackingNumber !== undefined) updateData.trackingNumber = trackingNumber;
       if (courierPartner !== undefined) updateData.courierPartner = courierPartner;
       if (paymentStatus !== undefined) {
@@ -179,7 +185,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           data: updateData,
         });
       }
-    } catch {}
+    } catch (error) {
+      console.error("Order metadata update failed:", error);
+      return NextResponse.json({ error: "Failed to save order changes." }, { status: 503 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

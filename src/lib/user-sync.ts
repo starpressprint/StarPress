@@ -21,7 +21,7 @@ export async function ensureDbUser(user: UserInput) {
   try {
     // 1. Try finding by ID or Email
     const existing = await db.user.findFirst({
-      where: email ? { OR: [{ id: user.id }, { email }] } : { id: user.id },
+      where: email && user.email_confirmed_at ? { OR: [{ id: user.id }, { email }] } : { id: user.id },
     });
 
     if (existing) {
@@ -60,13 +60,14 @@ export async function syncAllSupabaseUsersToDb(): Promise<number> {
   try {
     const { getAdminClient } = await import("@/lib/supabase/admin");
     const adminClient = getAdminClient();
-    const { data, error } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
+    let syncedCount = 0;
+    for (let page = 1; ; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
     if (error || !data?.users) {
       console.warn("[syncAllSupabaseUsersToDb] Supabase admin error:", error);
-      return 0;
+      throw new Error("User directory sync failed");
     }
 
-    let syncedCount = 0;
     for (const u of data.users) {
       if (!u.email) continue;
       const email = u.email.toLowerCase().trim();
@@ -78,16 +79,14 @@ export async function syncAllSupabaseUsersToDb(): Promise<number> {
         "Customer";
       const phone = u.phone || u.user_metadata?.phone || null;
       const isAppAdmin =
-        u.app_metadata?.role === "ADMIN" ||
-        email === "starpress.print@gmail.com" ||
-        email === "princesaxena511@gmail.com";
+        u.app_metadata?.role === "ADMIN";
 
       await db.user.upsert({
         where: { email },
         update: {
           name,
           phone: phone || undefined,
-          role: isAppAdmin ? "ADMIN" : "CUSTOMER",
+          // Directory sync must not grant or revoke application privileges.
         },
         create: {
           id: u.id,
@@ -100,6 +99,8 @@ export async function syncAllSupabaseUsersToDb(): Promise<number> {
       syncedCount++;
     }
 
+    if (data.users.length < 1000) break;
+    }
     return syncedCount;
   } catch (err: any) {
     console.warn("[syncAllSupabaseUsersToDb] Notice:", err?.message);

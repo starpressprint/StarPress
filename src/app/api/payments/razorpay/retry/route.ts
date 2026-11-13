@@ -1,3 +1,4 @@
+import { isOrderOwner } from "@/lib/order-access";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSessionUser } from "@/lib/supabase/server";
@@ -37,6 +38,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!user) return NextResponse.json({ error: "Authentication required to retry payment." }, { status: 401 });
+
     // Fetch order from database
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -55,10 +58,7 @@ export async function POST(request: NextRequest) {
     // Guard 1: Verify Ownership
     const isAdmin = user ? isUserAdmin(user) : false;
 
-    const isOwner =
-      (user && order.userId === user.id) ||
-      (order.guestEmail && user?.email && order.guestEmail.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
-      (!order.userId && order.guestEmail); // allow guest buyer with direct order recovery
+    const isOwner = isOrderOwner(order, user);
 
     if (!isOwner && !isAdmin) {
       return NextResponse.json(
@@ -120,6 +120,8 @@ export async function POST(request: NextRequest) {
       orderId: order.id,
       sessionUserId: user?.id,
       sessionUserEmail: user?.email,
+      sessionEmailVerified: Boolean(user?.email_confirmed_at),
+      isAdmin,
     });
 
     return NextResponse.json({

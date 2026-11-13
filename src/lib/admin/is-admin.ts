@@ -19,7 +19,7 @@ export function isUserAdmin(
 
   // (c) Email in ADMIN_EMAILS environment variable
   const email = (user.email || "").toLowerCase().trim();
-  if (email) {
+  if (email && user.email_confirmed_at) {
     const adminEnv =
       process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || "";
     if (adminEnv) {

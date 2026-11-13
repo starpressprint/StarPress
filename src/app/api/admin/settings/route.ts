@@ -91,7 +91,8 @@ export async function POST(request: NextRequest) {
         create: { key: "general_settings", value: body },
       });
     } catch (dbErr) {
-      console.warn("Could not save to db.storeSetting, falling back:", dbErr);
+      console.error("Could not save store settings:", dbErr);
+      return NextResponse.json({ error: "Settings could not be saved. Please retry." }, { status: 503 });
     }
 
     const updated = persistentStore.saveSettings(body);

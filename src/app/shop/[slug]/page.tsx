@@ -119,13 +119,7 @@ export default async function ProductDetailPage({ params }: PageProps) {
         name: "Star Press",
       },
     },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: product.rating || 5,
-      reviewCount: product.reviewCount || 1,
-      bestRating: 5,
-      worstRating: 1,
-    },
+
   };
 
   const breadcrumbJsonLd = {

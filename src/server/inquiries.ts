@@ -40,12 +40,7 @@ export async function createCustomPrintInquiry(input: CustomPrintInquiryInput) {
     return { success: true, inquiryNumber, inquiry };
   } catch (error) {
     console.error("Database error creating custom printing inquiry:", error);
-    return {
-      success: true,
-      inquiryNumber,
-      inquiry: { inquiryNumber, ...input, status: "NEW", createdAt: new Date().toISOString() },
-      isFallback: true,
-    };
+    throw new Error("Inquiry could not be saved. Please try again shortly.");
   }
 }
 
@@ -81,12 +76,7 @@ export async function createBulkOrderInquiry(input: BulkOrderInquiryInput) {
     return { success: true, inquiryNumber, inquiry };
   } catch (error) {
     console.error("Database error creating bulk order inquiry:", error);
-    return {
-      success: true,
-      inquiryNumber,
-      inquiry: { inquiryNumber, ...input, status: "NEW", createdAt: new Date().toISOString() },
-      isFallback: true,
-    };
+    throw new Error("Inquiry could not be saved. Please try again shortly.");
   }
 }
 
@@ -116,11 +106,6 @@ export async function createContactInquiry(input: ContactInquiryInput) {
     return { success: true, inquiryNumber, inquiry };
   } catch (error) {
     console.error("Database error creating contact inquiry:", error);
-    return {
-      success: true,
-      inquiryNumber,
-      inquiry: { inquiryNumber, ...input, status: "NEW", createdAt: new Date().toISOString() },
-      isFallback: true,
-    };
+    throw new Error("Inquiry could not be saved. Please try again shortly.");
   }
 }

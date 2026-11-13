@@ -13,10 +13,18 @@ see `docs/` for the full project documentation — start with `docs/00-PROJECT-O
 - [Changelog](docs/05-CHANGELOG.md)
 - [Setup Guide](docs/06-SETUP-GUIDE.md)
 
-## Status
-**Phase 0 complete** — repo scaffold, documentation, and draft database schema.
-See `docs/05-CHANGELOG.md` for details and `docs/04-PAGES-AND-FEATURES.md` for what's
-built vs. still planned.
+## Engineering audit and local checks
+
+The repository contains the storefront, customer account, checkout, Razorpay and admin implementations. See [the engineering audit](docs/ENGINEERING-AUDIT-2026-11-13.md) for verified fixes, test results and remaining release blockers.
+
+```bash
+npm run typecheck
+npm run lint
+npm run test:local
+npm run build:local
+```
+
+`test:local` runs eight suites with explicit test doubles and service credentials isolated. `build:local` intentionally points services at unavailable local endpoints; it verifies compilation and failure handling, not live integrations. Do not deploy that localhost-configured build. Existing integration/reset/seed scripts can mutate external systems: review their targets before running them.
 
 ### Weekly Security Audit Routine (Run Every Friday)
 

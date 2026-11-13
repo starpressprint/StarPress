@@ -31,40 +31,31 @@ export async function verifyAdminAccess(request?: NextRequest) {
       return { authorized: false, status: 401, error: "Unauthorized: Admin session required." };
     }
 
-    // 3. Authorization Check
-    // (a) First check via isUserAdmin helper (app_metadata or ADMIN_EMAILS)
-    if (isUserAdmin(user as any)) {
-      return { authorized: true, user };
-    }
-
-    // (b) Check PostgreSQL database User table directly for role === 'ADMIN'
+    // Read current privileges for every admin request; session roles can be stale.
     const normalizedEmail = (user.email || "").toLowerCase().trim();
     const dbUser = await db.user.findFirst({
       where: {
         OR: [
           ...(user.id ? [{ id: user.id }] : []),
-          ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+          ...(normalizedEmail && user.email_confirmed_at ? [{ email: normalizedEmail }] : []),
         ],
       },
       select: { id: true, email: true, role: true },
-    }).catch(() => null);
+    });
 
     if (dbUser?.role === "ADMIN") {
       return { authorized: true, user: { ...user, role: "ADMIN" } };
     }
 
-    // (c) Check ADMIN_EMAILS environment variable
-    const adminEnv = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || "";
-    if (adminEnv && normalizedEmail) {
-      const adminList = adminEnv.split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-      if (adminList.includes(normalizedEmail)) {
-        return { authorized: true, user: { ...user, role: "ADMIN" } };
-      }
+    // Existing database accounts are authoritative, including role revocation.
+    // A verified allowlist may only bootstrap an account not yet provisioned.
+    if (!dbUser && isUserAdmin({ email: user.email, email_confirmed_at: user.email_confirmed_at })) {
+      return { authorized: true, user: { ...user, role: "ADMIN" } };
     }
 
     return { authorized: false, status: 403, error: "Forbidden: Star Press administrative privileges required." };
   } catch (error) {
     console.error("[verifyAdminAccess] Exception:", error);
-    return { authorized: false, status: 500, error: "Internal Server Error during authorization." };
+    return { authorized: false, status: 503, error: "Authorization service is temporarily unavailable." };
   }
 }

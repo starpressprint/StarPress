@@ -1,3 +1,4 @@
+import { isOrderOwner } from "@/lib/order-access";
 // =============================================================================
 // POST /api/payments/razorpay/verify
 // Authoritative Razorpay Payment Verification (HMAC + Gateway REST Verification)
@@ -76,19 +77,16 @@ export async function POST(request: NextRequest) {
     const { isUserAdmin } = await import("@/lib/admin/is-admin");
     const isAdmin = user ? isUserAdmin(user) : false;
 
-    if (order.userId) {
-      if (user && user.id !== order.userId && !isAdmin) {
-        return NextResponse.json({ error: "Unauthorized access to order." }, { status: 403 });
-      }
-      // If session cookie is absent during gateway iframe return, strictly verify matching gateway order id
-      const dbRzpOrderId = (order as any).razorpayOrderId;
-      if (!user && dbRzpOrderId && dbRzpOrderId !== razorpay_order_id) {
-        return NextResponse.json({ error: "Order gateway reference mismatch." }, { status: 400 });
-      }
-    } else if (order.guestEmail && user && !isAdmin) {
-      if (user.email && order.guestEmail.toLowerCase().trim() !== user.email.toLowerCase().trim()) {
-        return NextResponse.json({ error: "Unauthorized access to order." }, { status: 403 });
-      }
+    if (!user) {
+      return NextResponse.json({ error: "Please sign in to verify payment." }, { status: 401 });
+    }
+    const isOwner = isOrderOwner(order, user);
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json({ error: "Order not found." }, { status: 404 });
+    }
+    if (!(order as any).razorpayOrderId || (order as any).razorpayOrderId !== razorpay_order_id) {
+      return NextResponse.json({ error: "Order gateway reference mismatch." }, { status: 400 });
     }
 
     // 4. Verify Razorpay credentials configured on server
@@ -164,7 +162,7 @@ export async function POST(request: NextRequest) {
       const paymentData = await rzpRes.json();
 
       // Validate payment status: must be captured
-      if (paymentData.status !== "captured" && paymentData.status !== "authorized") {
+      if (paymentData.status !== "captured") {
         console.warn(`[Razorpay Verify] Unexpected status "${paymentData.status}" for ${razorpay_payment_id}`);
         await auditPaymentEvent({
           orderId: order.id,
@@ -198,7 +196,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate currency is INR
-      if (paymentData.currency && paymentData.currency.toUpperCase() !== "INR") {
+      if (paymentData.currency !== "INR") {
         console.error(`[Payment Security Alert] Currency mismatch! Gateway: ${paymentData.currency}, expected INR`);
         return NextResponse.json(
           { error: "Payment currency mismatch." },
@@ -207,7 +205,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Validate order_id match
-      if (paymentData.order_id && paymentData.order_id !== razorpay_order_id) {
+      if (paymentData.order_id !== razorpay_order_id) {
         console.error(
           `[Payment Security Alert] Order ID mismatch! Gateway: ${paymentData.order_id}, client: ${razorpay_order_id}`
         );
